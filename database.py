@@ -9,23 +9,15 @@ def get_supabase_client():
     key = os.environ.get("SUPABASE_KEY")
     if not url or not key:
         raise Exception(
-            "❌ No se encontraron las variables SUPABASE_URL y SUPABASE_KEY. "
-            "Configúralas en Railway → Variables."
+            "❌ No se encontraron las variables SUPABASE_URL y SUPABASE_KEY."
         )
     return create_client(url, key)
 
 
-# =====================================================
-# AUTENTICACIÓN
-# =====================================================
-
 def registrar_usuario(email, password):
     supabase = get_supabase_client()
     try:
-        respuesta = supabase.auth.sign_up({
-            "email":    email,
-            "password": password
-        })
+        respuesta = supabase.auth.sign_up({"email": email, "password": password})
         if respuesta.user:
             return {"ok": True, "user": respuesta.user, "session": respuesta.session}
         return {"ok": False, "error": "No se pudo crear la cuenta."}
@@ -36,10 +28,7 @@ def registrar_usuario(email, password):
 def login_usuario(email, password):
     supabase = get_supabase_client()
     try:
-        respuesta = supabase.auth.sign_in_with_password({
-            "email":    email,
-            "password": password
-        })
+        respuesta = supabase.auth.sign_in_with_password({"email": email, "password": password})
         if respuesta.user:
             return {"ok": True, "user": respuesta.user, "session": respuesta.session}
         return {"ok": False, "error": "Email o contraseña incorrectos."}
@@ -56,31 +45,29 @@ def logout_usuario():
         return {"ok": False, "error": str(e)}
 
 
-# =====================================================
-# FUNCIONES DE PERFIL
-# =====================================================
-
 def guardar_perfil(auth_user_id, perfil):
     supabase = get_supabase_client()
     datos = {
-        "auth_user_id":  auth_user_id,
-        "nombre":        perfil["nombre"],
-        "edad":          perfil["edad"],
-        "peso":          perfil["peso"],
-        "nivel_texto":   perfil["nivel_texto"],
-        "nivel_num":     perfil["nivel_num"],
-        "objetivo":      perfil["objetivo"],
-        "dias":          perfil["dias"],
-        "minutos":       perfil["minutos"],
-        "equipamiento":  perfil["equipamiento"],
-        "lesiones":      perfil.get("lesiones", "")
+        "auth_user_id":          auth_user_id,
+        "nombre":                perfil["nombre"],
+        "edad":                  perfil["edad"],
+        "peso":                  perfil["peso"],
+        "genero":                perfil.get("genero", "Prefiero no decirlo"),
+        "nivel_texto":           perfil["nivel_texto"],
+        "nivel_num":             perfil["nivel_num"],
+        "objetivo":              perfil["objetivo"],
+        "musculos_prioritarios": json.dumps(perfil.get("musculos_prioritarios", [])),
+        "dias":                  perfil["dias"],
+        "minutos":               perfil["minutos"],
+        "equipamiento":          perfil["equipamiento"],
+        "lesiones":              perfil.get("lesiones", "")
     }
     respuesta = supabase.table("usuarios").insert(datos).execute()
     return respuesta.data[0]["id"]
 
 
 def obtener_perfil(auth_user_id):
-    supabase = get_supabase_client()
+    supabase  = get_supabase_client()
     respuesta = (
         supabase.table("usuarios")
         .select("*")
@@ -90,25 +77,27 @@ def obtener_perfil(auth_user_id):
         .execute()
     )
     if respuesta.data:
-        return respuesta.data[0]
+        perfil = respuesta.data[0]
+        # Deserializar músculos prioritarios de JSON a lista
+        if isinstance(perfil.get("musculos_prioritarios"), str):
+            try:
+                perfil["musculos_prioritarios"] = json.loads(perfil["musculos_prioritarios"])
+            except Exception:
+                perfil["musculos_prioritarios"] = []
+        return perfil
     return None
 
 
-# =====================================================
-# FUNCIONES DE RUTINAS
-# =====================================================
-
 def guardar_rutina(usuario_id, rutina):
     supabase = get_supabase_client()
-    datos = {
+    supabase.table("rutinas").insert({
         "usuario_id":  usuario_id,
         "rutina_json": json.dumps(rutina, ensure_ascii=False)
-    }
-    supabase.table("rutinas").insert(datos).execute()
+    }).execute()
 
 
 def obtener_rutina(usuario_id):
-    supabase = get_supabase_client()
+    supabase  = get_supabase_client()
     respuesta = (
         supabase.table("rutinas")
         .select("*")
@@ -126,19 +115,12 @@ def actualizar_pesos_rutina(usuario_id, resultados_ia):
     rutina_actual = obtener_rutina(usuario_id)
     if not rutina_actual:
         return None
-
-    nuevos_pesos = {
-        r["ejercicio"]: r["nuevo_peso"]
-        for r in resultados_ia
-    }
-
+    nuevos_pesos = {r["ejercicio"]: r["nuevo_peso"] for r in resultados_ia}
     for dia in rutina_actual["dias"]:
         for ejercicio in dia["ejercicios"]:
-            nombre = ejercicio["nombre"]
-            if nombre in nuevos_pesos:
-                ejercicio["peso_sugerido"] = nuevos_pesos[nombre]
-
-    supabase = get_supabase_client()
+            if ejercicio["nombre"] in nuevos_pesos:
+                ejercicio["peso_sugerido"] = nuevos_pesos[ejercicio["nombre"]]
+    supabase  = get_supabase_client()
     respuesta = (
         supabase.table("rutinas")
         .select("id")
@@ -147,39 +129,23 @@ def actualizar_pesos_rutina(usuario_id, resultados_ia):
         .limit(1)
         .execute()
     )
-
     if respuesta.data:
-        rutina_id = respuesta.data[0]["id"]
         supabase.table("rutinas").update({
             "rutina_json": json.dumps(rutina_actual, ensure_ascii=False)
-        }).eq("id", rutina_id).execute()
-
+        }).eq("id", respuesta.data[0]["id"]).execute()
     return rutina_actual
 
 
-# =====================================================
-# FUNCIONES DE BLOQUES ← NUEVAS
-# =====================================================
-
 def guardar_bloque(usuario_id, bloque):
-    """
-    Guarda el bloque de entrenamiento del usuario.
-    bloque → diccionario con numero_bloque, fecha_inicio, etc.
-    """
     supabase = get_supabase_client()
-    datos = {
+    supabase.table("bloques").insert({
         "usuario_id":  usuario_id,
         "bloque_json": json.dumps(bloque, ensure_ascii=False)
-    }
-    supabase.table("bloques").insert(datos).execute()
+    }).execute()
 
 
 def obtener_bloque_actual(usuario_id):
-    """
-    Obtiene el bloque activo más reciente del usuario.
-    Devuelve el bloque o None si no tiene ninguno.
-    """
-    supabase = get_supabase_client()
+    supabase  = get_supabase_client()
     respuesta = (
         supabase.table("bloques")
         .select("*")
@@ -194,10 +160,7 @@ def obtener_bloque_actual(usuario_id):
 
 
 def actualizar_bloque(usuario_id, bloque):
-    """
-    Actualiza el bloque actual del usuario.
-    """
-    supabase = get_supabase_client()
+    supabase  = get_supabase_client()
     respuesta = (
         supabase.table("bloques")
         .select("id")
@@ -207,28 +170,22 @@ def actualizar_bloque(usuario_id, bloque):
         .execute()
     )
     if respuesta.data:
-        bloque_id = respuesta.data[0]["id"]
         supabase.table("bloques").update({
             "bloque_json": json.dumps(bloque, ensure_ascii=False)
-        }).eq("id", bloque_id).execute()
+        }).eq("id", respuesta.data[0]["id"]).execute()
 
-
-# =====================================================
-# FUNCIONES DE SESIONES
-# =====================================================
 
 def guardar_sesion(usuario_id, dia_nombre, resultados):
     supabase = get_supabase_client()
-    datos = {
+    supabase.table("sesiones").insert({
         "usuario_id":      usuario_id,
         "dia_nombre":      dia_nombre,
         "resultados_json": json.dumps(resultados, ensure_ascii=False)
-    }
-    supabase.table("sesiones").insert(datos).execute()
+    }).execute()
 
 
 def obtener_historial_sesiones(usuario_id, limite=10):
-    supabase = get_supabase_client()
+    supabase  = get_supabase_client()
     respuesta = (
         supabase.table("sesiones")
         .select("*")
@@ -248,7 +205,7 @@ def obtener_historial_sesiones(usuario_id, limite=10):
 
 
 def obtener_progreso_por_ejercicio(usuario_id):
-    supabase = get_supabase_client()
+    supabase  = get_supabase_client()
     respuesta = (
         supabase.table("sesiones")
         .select("*")

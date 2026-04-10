@@ -32,60 +32,29 @@ st.set_page_config(
 # SELECTOR DE RPE CON BOTONES DE COLORES
 # =====================================================
 def selector_rpe(key, valor_defecto=7):
-    """
-    Muestra 10 botones del 1 al 10 para seleccionar el RPE.
-    - Verde  (1–4): Esfuerzo bajo
-    - Naranja (5–7): Esfuerzo medio
-    - Rojo   (8–10): Esfuerzo alto
-
-    Devuelve el valor seleccionado (int).
-    """
-
-    # Inicializar el valor en session_state si no existe
     state_key = f"rpe_{key}"
     if state_key not in st.session_state:
         st.session_state[state_key] = valor_defecto
 
-    # CSS para los botones de colores
-    st.markdown("""
-    <style>
-    div[data-testid="column"] button {
-        width: 100% !important;
-        padding: 8px 0px !important;
-        font-weight: bold !important;
-        border-radius: 8px !important;
-    }
-    </style>
-    """, unsafe_allow_html=True)
-
-    # Colores según nivel de esfuerzo
     def color_rpe(n):
-        if n <= 4:
-            return "🟢"   # Verde = fácil
-        elif n <= 7:
-            return "🟠"   # Naranja = medio
-        else:
-            return "🔴"   # Rojo = alto
+        if n <= 4:   return "🟢"
+        elif n <= 7: return "🟠"
+        else:        return "🔴"
 
-    # Mostrar los 10 botones en una fila
     cols = st.columns(10)
     for i, col in enumerate(cols):
-        numero = i + 1
-        icono  = color_rpe(numero)
+        numero     = i + 1
+        icono      = color_rpe(numero)
         seleccionado = st.session_state[state_key] == numero
-
         with col:
-            # El botón seleccionado muestra el número con el icono
-            # Los no seleccionados solo muestran el número
             etiqueta = f"{icono}\n{numero}" if seleccionado else str(numero)
             if st.button(etiqueta, key=f"rpe_btn_{key}_{numero}"):
                 st.session_state[state_key] = numero
                 st.rerun()
 
-    # Mostrar el valor seleccionado con su descripción
     valor = st.session_state[state_key]
     if valor <= 4:
-        st.caption(f"RPE {valor} — 🟢 Esfuerzo bajo · Te quedan muchas repeticiones en el tanque")
+        st.caption(f"RPE {valor} — 🟢 Esfuerzo bajo · Te quedan muchas repeticiones")
     elif valor <= 7:
         st.caption(f"RPE {valor} — 🟠 Esfuerzo medio · Te quedan 2–4 repeticiones")
     else:
@@ -222,16 +191,30 @@ elif st.session_state.auth_user_id and not st.session_state.perfil:
                                 value=70.0, step=0.5)
     st.divider()
 
-    st.header("2️⃣ Tu experiencia")
+    # ── NUEVO: Género ──
+    st.header("2️⃣ ¿Con qué cuerpo te identificas más?")
+    st.caption("Esto nos ayuda a personalizar los ejercicios y el enfoque muscular de tu rutina.")
+    genero = st.radio("Género:", options=[
+        "Hombre",
+        "Mujer",
+        "Prefiero no decirlo"
+    ], label_visibility="collapsed", horizontal=True)
+    st.divider()
+
+    st.header("3️⃣ Tu experiencia")
     nivel_texto = st.selectbox("¿Cuánto tiempo llevas entrenando?", options=[
         "Principiante — Menos de 6 meses",
         "Intermedio — Entre 6 meses y 2 años",
         "Avanzado — Más de 2 años"
     ])
     nivel_num = 1 if "Principiante" in nivel_texto else (2 if "Intermedio" in nivel_texto else 3)
+
+    if nivel_num == 3:
+        st.success("💡 Como usuario avanzado, tu rutina incluirá **técnicas avanzadas** "
+                   "como Drop Sets y Rest-Pause en los últimos ejercicios de cada grupo muscular.")
     st.divider()
 
-    st.header("3️⃣ Tu objetivo")
+    st.header("4️⃣ Tu objetivo")
     objetivo = st.radio("Objetivo:", options=[
         "💪 Ganar músculo (hipertrofia)",
         "🔥 Perder grasa (mantener músculo)",
@@ -240,7 +223,30 @@ elif st.session_state.auth_user_id and not st.session_state.perfil:
     ], label_visibility="collapsed")
     st.divider()
 
-    st.header("4️⃣ Disponibilidad")
+    # ── NUEVO: Músculos prioritarios ──
+    st.header("5️⃣ ¿En qué músculos quieres enfocarte más?")
+    st.caption("Recibirán el doble de ejercicios en tu rutina. Puedes elegir varios o ninguno.")
+
+    opciones_musculos = {
+        "🍑 Glúteos":       "gluteos",
+        "🦵 Piernas":       "piernas",
+        "💪 Pecho":         "pecho",
+        "🔙 Espalda":       "espalda",
+        "🏋️ Hombros":      "hombros",
+        "💪 Bíceps":        "biceps",
+        "💪 Tríceps":       "triceps",
+    }
+
+    musculos_seleccionados = st.multiselect(
+        "Selecciona tus músculos prioritarios (opcional):",
+        options=list(opciones_musculos.keys()),
+        default=["🍑 Glúteos", "🦵 Piernas"] if genero == "Mujer" else []
+    )
+    musculos_prioritarios = [opciones_musculos[m] for m in musculos_seleccionados]
+
+    st.divider()
+
+    st.header("6️⃣ Disponibilidad")
     dias = st.select_slider("Días/semana", options=[2,3,4,5,6], value=3)
     if dias <= 3:
         st.info("💡 Haremos Fullbody.")
@@ -252,7 +258,7 @@ elif st.session_state.auth_user_id and not st.session_state.perfil:
                             index=2, format_func=lambda x: f"{x} minutos")
     st.divider()
 
-    st.header("5️⃣ Equipamiento")
+    st.header("7️⃣ Equipamiento")
     equipamiento = st.radio("¿Con qué entrenas?", options=[
         "🏠 Sin equipamiento (solo peso corporal)",
         "🏠 Tengo mancuernas en casa",
@@ -260,7 +266,7 @@ elif st.session_state.auth_user_id and not st.session_state.perfil:
     ])
     st.divider()
 
-    st.header("6️⃣ Lesiones")
+    st.header("8️⃣ Lesiones")
     tiene_lesiones = st.toggle("¿Tienes alguna lesión actualmente?")
     lesiones_texto = ""
     if tiene_lesiones:
@@ -273,10 +279,18 @@ elif st.session_state.auth_user_id and not st.session_state.perfil:
                   use_container_width=True,
                   type="primary"):
         perfil = {
-            "nombre": nombre, "edad": edad, "peso": peso,
-            "nivel_texto": nivel_texto, "nivel_num": nivel_num,
-            "objetivo": objetivo, "dias": dias, "minutos": minutos,
-            "equipamiento": equipamiento, "lesiones": lesiones_texto
+            "nombre":               nombre,
+            "edad":                 edad,
+            "peso":                 peso,
+            "genero":               genero,
+            "nivel_texto":          nivel_texto,
+            "nivel_num":            nivel_num,
+            "objetivo":             objetivo,
+            "musculos_prioritarios": musculos_prioritarios,
+            "dias":                 dias,
+            "minutos":              minutos,
+            "equipamiento":         equipamiento,
+            "lesiones":             lesiones_texto
         }
         with st.spinner("Generando tu rutina personalizada..."):
             usuario_id = guardar_perfil(st.session_state.auth_user_id, perfil)
@@ -340,8 +354,7 @@ else:
         )
 
         if info_semana["semana_en_bloque"] == 8:
-            st.warning("🔄 Esta semana es tu **semana de deload**. "
-                       "Entrena con menos intensidad para que tu cuerpo se recupere.")
+            st.warning("🔄 Esta semana es tu **semana de deload**.")
         if info_semana["semana_en_bloque"] == 7:
             st.info("⚠️ La próxima semana es tu semana de deload. ¡Aprieta fuerte esta semana!")
 
@@ -362,6 +375,12 @@ else:
         col2.metric("Repeticiones", f"{rutina['reps_min']}–{rutina['reps_max']} reps")
         col3.metric("RPE objetivo", f"{fase_actual['rpe_objetivo']}/10")
         st.markdown(f"**Tipo de rutina:** {nombre_estructura}")
+
+        # Mostrar músculos prioritarios si tiene
+        prioritarios = perfil.get("musculos_prioritarios", [])
+        if prioritarios:
+            st.caption(f"🎯 Músculos prioritarios: {', '.join(prioritarios).capitalize()}")
+
         st.divider()
 
         col_nav1, col_nav2 = st.columns(2)
@@ -409,6 +428,9 @@ else:
                         with col_info:
                             st.markdown(f"**{ejercicio['nombre']}**")
                             st.caption(f"Grupo: {ejercicio['grupo'].capitalize()}")
+                            # Mostrar técnica avanzada si existe
+                            if ejercicio.get("tecnica"):
+                                st.caption(f"⚡ {ejercicio['tecnica']['nombre']}: {ejercicio['tecnica']['descripcion']}")
                         with col_peso:
                             st.markdown(f"**{ejercicio['series']} × {ejercicio['reps_min']}–{ejercicio['reps_max']} reps**")
                             st.markdown(f"📦 {peso_texto}")
@@ -442,9 +464,14 @@ else:
             peso_base  = ejercicio["peso_sugerido"] or 20.0
             num_series = ejercicio["series"]
             reps_obj   = rutina_hoy["reps_max"]
+            tecnica    = ejercicio.get("tecnica")
 
             st.subheader(f"💪 {nombre_ej}")
             st.caption(f"Objetivo: {num_series} × {rutina_hoy['reps_min']}–{reps_obj} reps @ {peso_base} kg")
+
+            # Mostrar técnica avanzada si existe
+            if tecnica:
+                st.warning(f"⚡ **{tecnica['nombre']} ({tecnica['abreviatura']}):** {tecnica['descripcion']}")
 
             series_del_ejercicio = []
             for i in range(1, num_series + 1):
@@ -463,7 +490,6 @@ else:
                         key=f"{nombre_ej}_reps_{i}"
                     )
 
-                # ← NUEVO: Selector RPE con botones de colores
                 st.write("**Esfuerzo (RPE):**")
                 rpe_real = selector_rpe(
                     key=f"{nombre_ej}_s{i}",
