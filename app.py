@@ -216,8 +216,7 @@ elif st.session_state.auth_user_id and not st.session_state.perfil:
             usuario_id = guardar_perfil(st.session_state.auth_user_id, perfil)
             rutina     = generar_rutina(perfil)
             guardar_rutina(usuario_id, rutina)
-            # Crear el bloque inicial
-            bloque = crear_bloque_inicial()
+            bloque     = crear_bloque_inicial()
             guardar_bloque(usuario_id, bloque)
 
         st.session_state.usuario_id = usuario_id
@@ -236,17 +235,14 @@ else:
     rutina = st.session_state.rutina
     bloque = st.session_state.bloque
 
-    # Si el usuario no tiene bloque todavía (usuarios creados antes de esta función),
-    # creamos uno ahora
     if not bloque:
         bloque = crear_bloque_inicial()
         guardar_bloque(st.session_state.usuario_id, bloque)
         st.session_state.bloque = bloque
 
-    # Calcular semana y fase actual
-    info_semana  = calcular_semana_del_bloque(bloque["fecha_inicio"])
-    fase_actual  = obtener_fase_actual(info_semana["semana_en_bloque"])
-    rutina_hoy   = ajustar_rutina_por_fase(rutina, fase_actual)
+    info_semana = calcular_semana_del_bloque(bloque["fecha_inicio"])
+    fase_actual = obtener_fase_actual(info_semana["semana_en_bloque"])
+    rutina_hoy  = ajustar_rutina_por_fase(rutina, fase_actual)
 
     # --------------------------------------------------
     # PANTALLA: RUTINA
@@ -264,7 +260,6 @@ else:
                     del st.session_state[key]
                 st.rerun()
 
-        # ── Banner de bloque y fase actual ──
         color_fase = {
             "blue":   "info",
             "green":  "success",
@@ -278,17 +273,13 @@ else:
             f"{fase_actual['descripcion']}"
         )
 
-        # Aviso especial si es semana de deload
         if info_semana["semana_en_bloque"] == 8:
             st.warning("🔄 Esta semana es tu **semana de deload**. "
                        "Entrena con menos intensidad para que tu cuerpo se recupere.")
 
-        # Aviso si queda 1 semana para el deload
         if info_semana["semana_en_bloque"] == 7:
-            st.info("⚠️ La próxima semana es tu semana de deload. "
-                    "¡Aprieta fuerte esta semana!")
+            st.info("⚠️ La próxima semana es tu semana de deload. ¡Aprieta fuerte esta semana!")
 
-        # Barra de progreso del bloque
         progreso_bloque = info_semana["semana_en_bloque"] / 8
         st.progress(progreso_bloque,
                     text=f"Progreso del bloque: semana {info_semana['semana_en_bloque']}/8")
@@ -303,9 +294,9 @@ else:
         nombre_estructura = nombres_estructura.get(rutina["estructura"], rutina["estructura"])
 
         col1, col2, col3 = st.columns(3)
-        col1.metric("Series HOY",    f"{fase_actual['series']} series")
-        col2.metric("Repeticiones",  f"{rutina['reps_min']}–{rutina['reps_max']} reps")
-        col3.metric("RPE objetivo",  f"{fase_actual['rpe_objetivo']}/10")
+        col1.metric("Series HOY",   f"{fase_actual['series']} series")
+        col2.metric("Repeticiones", f"{rutina['reps_min']}–{rutina['reps_max']} reps")
+        col3.metric("RPE objetivo", f"{fase_actual['rpe_objetivo']}/10")
         st.markdown(f"**Tipo de rutina:** {nombre_estructura}")
         st.divider()
 
@@ -369,9 +360,7 @@ else:
 
         st.title("🏋️ Sesión de hoy")
         st.subheader(f"📅 {dia_nombre} — {enfoque_hoy}")
-
-        # Banner de fase en la sesión
-        st.info(f"**Fase actual: {fase_actual['nombre']}** · "
+        st.info(f"**Fase: {fase_actual['nombre']}** · "
                 f"{fase_actual['series']} series · RPE objetivo {fase_actual['rpe_objetivo']}")
 
         with st.expander("❓ ¿Qué es el RPE?"):
@@ -425,7 +414,6 @@ else:
             if st.button("✅ Finalizar sesión →", use_container_width=True, type="primary"):
                 registros_algoritmo = {n: d["series"] for n, d in registros.items()}
                 resultados = analizar_sesion_completa(registros_algoritmo, rutina_hoy["reps_max"])
-
                 with st.spinner("Guardando y actualizando pesos..."):
                     guardar_sesion(st.session_state.usuario_id, dia_nombre, resultados)
                     rutina_actualizada = actualizar_pesos_rutina(
@@ -433,7 +421,6 @@ else:
                     )
                     if rutina_actualizada:
                         st.session_state.rutina = rutina_actualizada
-
                 st.session_state.resultados_sesion = resultados
                 st.session_state.pantalla = "resultados"
                 st.rerun()
@@ -454,8 +441,6 @@ else:
         col1.metric("⬆️ Suben",     subidas)
         col2.metric("➡️ Mantienen", mantiene)
         col3.metric("⬇️ Bajan",     bajadas)
-
-        # Mostrar en qué fase estamos
         st.info(f"Semana {info_semana['semana_en_bloque']}/8 · Fase: {fase_actual['nombre']}")
         st.divider()
 
@@ -488,7 +473,7 @@ else:
             st.rerun()
 
     # --------------------------------------------------
-    # PANTALLA: RESUMEN DEL BLOQUE ← NUEVA
+    # PANTALLA: RESUMEN DEL BLOQUE
     # --------------------------------------------------
     elif st.session_state.pantalla == "resumen_bloque":
 
@@ -501,9 +486,8 @@ else:
             st.rerun()
 
         st.divider()
-
-        # Progreso visual del bloque con las 4 fases
         st.subheader("🗓️ Fases del bloque")
+
         for fase in [
             {"nombre": "Adaptación",      "semanas": "1–2", "series": 3, "rpe": 7},
             {"nombre": "Acumulación",     "semanas": "3–5", "series": 4, "rpe": 8},
@@ -514,8 +498,11 @@ else:
             with st.container(border=True):
                 col_f1, col_f2, col_f3, col_f4 = st.columns([2, 1, 1, 1])
                 with col_f1:
-                    marcador = "▶️ " if es_actual else "   "
-                    st.markdown(f"**{marcador}{fase['nombre']}**")
+                    # ← CORRECCIÓN: sin asteriscos en nombres
+                    if es_actual:
+                        st.markdown(f"**▶️ {fase['nombre']}**")
+                    else:
+                        st.write(fase["nombre"])
                     st.caption(f"Semanas {fase['semanas']}")
                 with col_f2:
                     st.metric("Series", fase["series"])
@@ -526,17 +513,15 @@ else:
                         st.success("ACTUAL")
 
         st.divider()
-
-        # Estadísticas del bloque
         st.subheader("📈 Estadísticas del bloque actual")
         historial = obtener_historial_sesiones(st.session_state.usuario_id, limite=50)
         resumen   = generar_resumen_bloque(historial, info_semana["numero_bloque"])
 
         if resumen:
             col1, col2, col3 = st.columns(3)
-            col1.metric("Sesiones completadas", resumen["total_sesiones"])
+            col1.metric("Sesiones completadas",  resumen["total_sesiones"])
             col2.metric("Ejercicios que subieron", resumen["ejercicios_subidos"])
-            col3.metric("% de progreso", f"{resumen['pct_progreso']:.0f}%")
+            col3.metric("% de progreso",          f"{resumen['pct_progreso']:.0f}%")
         else:
             st.info("Completa tu primera sesión para ver las estadísticas del bloque.")
 
