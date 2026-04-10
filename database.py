@@ -16,33 +16,99 @@ def get_supabase_client():
 
 
 # =====================================================
-# FUNCIONES DE USUARIOS
+# AUTENTICACIÓN
 # =====================================================
 
-def guardar_usuario(perfil):
+def registrar_usuario(email, password):
+    """
+    Crea una nueva cuenta con email y contraseña.
+    Devuelve el objeto de sesión si funciona, o un mensaje de error.
+
+    Supabase se encarga de:
+    - Verificar que el email no está ya registrado
+    - Cifrar la contraseña (nunca se guarda en texto plano)
+    - Generar un ID único para el usuario
+    """
+    supabase = get_supabase_client()
+    try:
+        respuesta = supabase.auth.sign_up({
+            "email":    email,
+            "password": password
+        })
+        if respuesta.user:
+            return {"ok": True, "user": respuesta.user, "session": respuesta.session}
+        return {"ok": False, "error": "No se pudo crear la cuenta."}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+def login_usuario(email, password):
+    """
+    Inicia sesión con email y contraseña.
+    Devuelve la sesión si las credenciales son correctas, o un error.
+    """
+    supabase = get_supabase_client()
+    try:
+        respuesta = supabase.auth.sign_in_with_password({
+            "email":    email,
+            "password": password
+        })
+        if respuesta.user:
+            return {"ok": True, "user": respuesta.user, "session": respuesta.session}
+        return {"ok": False, "error": "Email o contraseña incorrectos."}
+    except Exception as e:
+        return {"ok": False, "error": "Email o contraseña incorrectos."}
+
+
+def logout_usuario():
+    """
+    Cierra la sesión del usuario actual.
+    """
+    supabase = get_supabase_client()
+    try:
+        supabase.auth.sign_out()
+        return {"ok": True}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+# =====================================================
+# FUNCIONES DE PERFIL DE USUARIO
+# =====================================================
+
+def guardar_perfil(auth_user_id, perfil):
+    """
+    Guarda el perfil del usuario vinculado a su cuenta de login.
+    Usa auth_user_id para conectar el perfil con la cuenta de autenticación.
+    """
     supabase = get_supabase_client()
     datos = {
-        "nombre":       perfil["nombre"],
-        "edad":         perfil["edad"],
-        "peso":         perfil["peso"],
-        "nivel_texto":  perfil["nivel_texto"],
-        "nivel_num":    perfil["nivel_num"],
-        "objetivo":     perfil["objetivo"],
-        "dias":         perfil["dias"],
-        "minutos":      perfil["minutos"],
-        "equipamiento": perfil["equipamiento"],
-        "lesiones":     perfil.get("lesiones", "")
+        "auth_user_id":  auth_user_id,
+        "nombre":        perfil["nombre"],
+        "edad":          perfil["edad"],
+        "peso":          perfil["peso"],
+        "nivel_texto":   perfil["nivel_texto"],
+        "nivel_num":     perfil["nivel_num"],
+        "objetivo":      perfil["objetivo"],
+        "dias":          perfil["dias"],
+        "minutos":       perfil["minutos"],
+        "equipamiento":  perfil["equipamiento"],
+        "lesiones":      perfil.get("lesiones", "")
     }
     respuesta = supabase.table("usuarios").insert(datos).execute()
     return respuesta.data[0]["id"]
 
 
-def buscar_usuario_por_nombre(nombre):
+def obtener_perfil(auth_user_id):
+    """
+    Obtiene el perfil de un usuario por su auth_user_id.
+    Devuelve el perfil o None si no tiene perfil creado todavía.
+    """
     supabase = get_supabase_client()
     respuesta = (
         supabase.table("usuarios")
         .select("*")
-        .eq("nombre", nombre)
+        .eq("auth_user_id", auth_user_id)
         .order("created_at", desc=True)
         .limit(1)
         .execute()
@@ -115,55 +181,26 @@ def obtener_historial_sesiones(usuario_id, limite=10):
 
 
 def obtener_progreso_por_ejercicio(usuario_id):
-    """
-    Extrae el historial de pesos de TODOS los ejercicios del usuario,
-    ordenado cronológicamente (del más antiguo al más reciente).
-
-    Devuelve un diccionario donde cada clave es el nombre de un ejercicio
-    y el valor es una lista de puntos de datos:
-
-    {
-        "Press de banca con barra": [
-            {"sesion": 1, "fecha": "2026-04-01", "peso_usado": 32.5, "nuevo_peso": 35.0},
-            {"sesion": 2, "fecha": "2026-04-03", "peso_usado": 35.0, "nuevo_peso": 35.0},
-            ...
-        ],
-        "Jalón al pecho en polea": [...],
-        ...
-    }
-    """
     supabase = get_supabase_client()
-
-    # Obtenemos TODAS las sesiones del usuario, ordenadas de más antigua a más reciente
     respuesta = (
         supabase.table("sesiones")
         .select("*")
         .eq("usuario_id", usuario_id)
-        .order("created_at", desc=False)  # False = cronológico (más antigua primero)
+        .order("created_at", desc=False)
         .execute()
     )
-
-    # Diccionario que iremos llenando
     progreso = {}
-
     for numero_sesion, fila in enumerate(respuesta.data, 1):
         fecha      = fila["created_at"][:10]
         resultados = json.loads(fila["resultados_json"])
-
         for resultado in resultados:
             nombre_ejercicio = resultado["ejercicio"]
-            peso_usado       = resultado["peso_usado"]
-            nuevo_peso       = resultado["nuevo_peso"]
-
-            # Si es la primera vez que vemos este ejercicio, creamos su lista
             if nombre_ejercicio not in progreso:
                 progreso[nombre_ejercicio] = []
-
             progreso[nombre_ejercicio].append({
-                "sesion":      numero_sesion,
-                "fecha":       fecha,
-                "peso_usado":  peso_usado,
-                "nuevo_peso":  nuevo_peso
+                "sesion":     numero_sesion,
+                "fecha":      fecha,
+                "peso_usado": resultado["peso_usado"],
+                "nuevo_peso": resultado["nuevo_peso"]
             })
-
     return progreso
