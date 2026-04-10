@@ -43,8 +43,8 @@ def selector_rpe(key, valor_defecto=7):
 
     cols = st.columns(10)
     for i, col in enumerate(cols):
-        numero     = i + 1
-        icono      = color_rpe(numero)
+        numero       = i + 1
+        icono        = color_rpe(numero)
         seleccionado = st.session_state[state_key] == numero
         with col:
             etiqueta = f"{icono}\n{numero}" if seleccionado else str(numero)
@@ -191,14 +191,15 @@ elif st.session_state.auth_user_id and not st.session_state.perfil:
                                 value=70.0, step=0.5)
     st.divider()
 
-    # ── NUEVO: Género ──
-    st.header("2️⃣ ¿Con qué cuerpo te identificas más?")
-    st.caption("Esto nos ayuda a personalizar los ejercicios y el enfoque muscular de tu rutina.")
-    genero = st.radio("Género:", options=[
-        "Hombre",
-        "Mujer",
-        "Prefiero no decirlo"
-    ], label_visibility="collapsed", horizontal=True)
+    # ── Género — pregunta simple y neutra ──
+    st.header("2️⃣ Género")
+    st.caption("Nos ayuda a personalizar el enfoque muscular de tu rutina.")
+    genero = st.radio(
+        "Género:",
+        options=["Hombre", "Mujer", "Prefiero no decirlo"],
+        label_visibility="collapsed",
+        horizontal=True
+    )
     st.divider()
 
     st.header("3️⃣ Tu experiencia")
@@ -223,24 +224,24 @@ elif st.session_state.auth_user_id and not st.session_state.perfil:
     ], label_visibility="collapsed")
     st.divider()
 
-    # ── NUEVO: Músculos prioritarios ──
+    # ── Músculos prioritarios — sin preselección ──
     st.header("5️⃣ ¿En qué músculos quieres enfocarte más?")
     st.caption("Recibirán el doble de ejercicios en tu rutina. Puedes elegir varios o ninguno.")
 
     opciones_musculos = {
-        "🍑 Glúteos":       "gluteos",
-        "🦵 Piernas":       "piernas",
-        "💪 Pecho":         "pecho",
-        "🔙 Espalda":       "espalda",
-        "🏋️ Hombros":      "hombros",
-        "💪 Bíceps":        "biceps",
-        "💪 Tríceps":       "triceps",
+        "🍑 Glúteos":    "gluteos",
+        "🦵 Piernas":    "piernas",
+        "🫁 Pecho":      "pecho",      # ← icono cambiado
+        "🔙 Espalda":    "espalda",
+        "🥥 Hombros":    "hombros",    # ← coco para hombros
+        "💪 Bíceps":     "biceps",
+        "🔱 Tríceps":    "triceps",
     }
 
     musculos_seleccionados = st.multiselect(
         "Selecciona tus músculos prioritarios (opcional):",
         options=list(opciones_musculos.keys()),
-        default=["🍑 Glúteos", "🦵 Piernas"] if genero == "Mujer" else []
+        default=[]                     # ← sin preselección para nadie
     )
     musculos_prioritarios = [opciones_musculos[m] for m in musculos_seleccionados]
 
@@ -279,18 +280,18 @@ elif st.session_state.auth_user_id and not st.session_state.perfil:
                   use_container_width=True,
                   type="primary"):
         perfil = {
-            "nombre":               nombre,
-            "edad":                 edad,
-            "peso":                 peso,
-            "genero":               genero,
-            "nivel_texto":          nivel_texto,
-            "nivel_num":            nivel_num,
-            "objetivo":             objetivo,
+            "nombre":                nombre,
+            "edad":                  edad,
+            "peso":                  peso,
+            "genero":                genero,
+            "nivel_texto":           nivel_texto,
+            "nivel_num":             nivel_num,
+            "objetivo":              objetivo,
             "musculos_prioritarios": musculos_prioritarios,
-            "dias":                 dias,
-            "minutos":              minutos,
-            "equipamiento":         equipamiento,
-            "lesiones":             lesiones_texto
+            "dias":                  dias,
+            "minutos":               minutos,
+            "equipamiento":          equipamiento,
+            "lesiones":              lesiones_texto
         }
         with st.spinner("Generando tu rutina personalizada..."):
             usuario_id = guardar_perfil(st.session_state.auth_user_id, perfil)
@@ -376,10 +377,9 @@ else:
         col3.metric("RPE objetivo", f"{fase_actual['rpe_objetivo']}/10")
         st.markdown(f"**Tipo de rutina:** {nombre_estructura}")
 
-        # Mostrar músculos prioritarios si tiene
         prioritarios = perfil.get("musculos_prioritarios", [])
         if prioritarios:
-            st.caption(f"🎯 Músculos prioritarios: {', '.join(prioritarios).capitalize()}")
+            st.caption(f"🎯 Músculos prioritarios: {', '.join(prioritarios)}")
 
         st.divider()
 
@@ -428,7 +428,6 @@ else:
                         with col_info:
                             st.markdown(f"**{ejercicio['nombre']}**")
                             st.caption(f"Grupo: {ejercicio['grupo'].capitalize()}")
-                            # Mostrar técnica avanzada si existe
                             if ejercicio.get("tecnica"):
                                 st.caption(f"⚡ {ejercicio['tecnica']['nombre']}: {ejercicio['tecnica']['descripcion']}")
                         with col_peso:
@@ -469,7 +468,6 @@ else:
             st.subheader(f"💪 {nombre_ej}")
             st.caption(f"Objetivo: {num_series} × {rutina_hoy['reps_min']}–{reps_obj} reps @ {peso_base} kg")
 
-            # Mostrar técnica avanzada si existe
             if tecnica:
                 st.warning(f"⚡ **{tecnica['nombre']} ({tecnica['abreviatura']}):** {tecnica['descripcion']}")
 
