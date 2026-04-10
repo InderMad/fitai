@@ -8,7 +8,8 @@ from database import (
     guardar_perfil, obtener_perfil,
     guardar_rutina, obtener_rutina,
     guardar_sesion, obtener_historial_sesiones,
-    obtener_progreso_por_ejercicio
+    obtener_progreso_por_ejercicio,
+    get_supabase_client
 )
 
 # =====================================================
@@ -31,15 +32,34 @@ for key, default in {
     "pantalla":          "rutina",
     "resultados_sesion": [],
     "dia_seleccionado":  None,
-    "auth_pantalla":     "login"   # puede ser "login" o "registro"
+    "auth_pantalla":     "login"
 }.items():
     if key not in st.session_state:
         st.session_state[key] = default
 
+# ── Recuperar sesión automáticamente si hay token en la URL ──
+if not st.session_state.auth_user_id:
+    try:
+        token = st.query_params.get("token", None)
+        if token:
+            supabase  = get_supabase_client()
+            sesion    = supabase.auth.get_user(token)
+            if sesion and sesion.user:
+                auth_id   = sesion.user.id
+                perfil_db = obtener_perfil(auth_id)
+                if perfil_db:
+                    rutina_db = obtener_rutina(perfil_db["id"])
+                    st.session_state.auth_user_id = auth_id
+                    st.session_state.usuario_id   = perfil_db["id"]
+                    st.session_state.perfil       = perfil_db
+                    st.session_state.rutina       = rutina_db
+                    st.session_state.pantalla     = "rutina"
+    except Exception:
+        pass  # Token inválido o expirado → mostrar login normal
+
 
 # =====================================================
 # PANTALLA DE AUTENTICACIÓN
-# (Se muestra si el usuario NO ha iniciado sesión)
 # =====================================================
 if not st.session_state.auth_user_id:
 
@@ -47,7 +67,6 @@ if not st.session_state.auth_user_id:
     st.write("Tu entrenador personal inteligente.")
     st.divider()
 
-    # Pestañas para Login y Registro
     tab_login, tab_registro = st.tabs(["🔑 Iniciar sesión", "✨ Crear cuenta"])
 
     # --------------------------------------------------
@@ -72,11 +91,13 @@ if not st.session_state.auth_user_id:
                 if resultado["ok"]:
                     auth_id = resultado["user"].id
 
-                    # Buscar el perfil vinculado a esta cuenta
+                    # Guardar token en la URL para persistir sesión
+                    if resultado["session"]:
+                        st.query_params["token"] = resultado["session"].access_token
+
                     perfil_db = obtener_perfil(auth_id)
 
                     if perfil_db:
-                        # El usuario ya tiene perfil → cargar rutina
                         rutina_db = obtener_rutina(perfil_db["id"])
                         st.session_state.auth_user_id = auth_id
                         st.session_state.usuario_id   = perfil_db["id"]
@@ -84,7 +105,6 @@ if not st.session_state.auth_user_id:
                         st.session_state.rutina       = rutina_db
                         st.session_state.pantalla     = "rutina"
                     else:
-                        # La cuenta existe pero no tiene perfil todavía
                         st.session_state.auth_user_id = auth_id
                         st.session_state.pantalla     = "crear_perfil"
 
@@ -119,6 +139,10 @@ if not st.session_state.auth_user_id:
                     resultado = registrar_usuario(email_reg, password_reg)
 
                 if resultado["ok"]:
+                    # Guardar token en la URL
+                    if resultado["session"]:
+                        st.query_params["token"] = resultado["session"].access_token
+
                     st.success("✅ Cuenta creada correctamente. Ahora crea tu perfil.")
                     st.session_state.auth_user_id = resultado["user"].id
                     st.session_state.pantalla     = "crear_perfil"
@@ -129,7 +153,6 @@ if not st.session_state.auth_user_id:
 
 # =====================================================
 # PANTALLA DE CREAR PERFIL
-# (Usuario logueado pero sin perfil todavía)
 # =====================================================
 elif st.session_state.auth_user_id and not st.session_state.perfil:
 
@@ -196,14 +219,12 @@ elif st.session_state.auth_user_id and not st.session_state.perfil:
                   disabled=not nombre,
                   use_container_width=True,
                   type="primary"):
-
         perfil = {
             "nombre": nombre, "edad": edad, "peso": peso,
             "nivel_texto": nivel_texto, "nivel_num": nivel_num,
             "objetivo": objetivo, "dias": dias, "minutos": minutos,
             "equipamiento": equipamiento, "lesiones": lesiones_texto
         }
-
         with st.spinner("Generando tu rutina personalizada..."):
             usuario_id = guardar_perfil(st.session_state.auth_user_id, perfil)
             rutina     = generar_rutina(perfil)
@@ -217,7 +238,7 @@ elif st.session_state.auth_user_id and not st.session_state.perfil:
 
 
 # =====================================================
-# PANTALLAS PRINCIPALES (usuario logueado con perfil)
+# PANTALLAS PRINCIPALES
 # =====================================================
 else:
     perfil = st.session_state.perfil
@@ -228,13 +249,13 @@ else:
     # --------------------------------------------------
     if st.session_state.pantalla == "rutina":
 
-        # Barra superior con nombre y botón de logout
         col_titulo, col_logout = st.columns([4, 1])
         with col_titulo:
             st.title(f"💪 Tu rutina, {perfil['nombre']}")
         with col_logout:
             if st.button("Salir", use_container_width=True):
                 logout_usuario()
+                st.query_params.clear()  # Limpiar token de la URL
                 for key in list(st.session_state.keys()):
                     del st.session_state[key]
                 st.rerun()
@@ -246,9 +267,7 @@ else:
             "torso_pierna":   "Torso / Pierna",
             "push_pull_legs": "Push / Pull / Legs"
         }
-        nombre_estructura = nombres_estructura.get(
-            rutina["estructura"], rutina["estructura"]
-        )
+        nombre_estructura = nombres_estructura.get(rutina["estructura"], rutina["estructura"])
 
         col1, col2, col3 = st.columns(3)
         col1.metric("Series",       f"{rutina['series']} series")
@@ -435,19 +454,17 @@ else:
             st.info("Completa tu primera sesión para ver tu progreso aquí.")
         else:
             ejercicios_disponibles = list(progreso.keys())
-            ejercicio_elegido = st.selectbox(
-                "Selecciona un ejercicio:", ejercicios_disponibles
-            )
-            datos_ejercicio = progreso[ejercicio_elegido]
+            ejercicio_elegido = st.selectbox("Selecciona un ejercicio:", ejercicios_disponibles)
+            datos_ejercicio   = progreso[ejercicio_elegido]
 
             if len(datos_ejercicio) < 2:
                 st.info(f"Necesitas al menos 2 sesiones de **{ejercicio_elegido}** para ver la gráfica.")
             else:
                 df = pd.DataFrame({
-                    "Sesión":          [d["sesion"]     for d in datos_ejercicio],
-                    "Fecha":           [d["fecha"]       for d in datos_ejercicio],
-                    "Peso usado":      [d["peso_usado"]  for d in datos_ejercicio],
-                    "Peso siguiente":  [d["nuevo_peso"]  for d in datos_ejercicio]
+                    "Sesión":         [d["sesion"]    for d in datos_ejercicio],
+                    "Fecha":          [d["fecha"]      for d in datos_ejercicio],
+                    "Peso usado":     [d["peso_usado"] for d in datos_ejercicio],
+                    "Peso siguiente": [d["nuevo_peso"] for d in datos_ejercicio]
                 })
                 st.subheader(f"📊 {ejercicio_elegido}")
                 st.line_chart(df.set_index("Sesión")[["Peso usado", "Peso siguiente"]])
@@ -460,7 +477,7 @@ else:
                     pct = (diferencia / peso_inicial) * 100
                     st.success(f"✅ Has subido **{diferencia:.1f} kg** en {len(datos_ejercicio)} sesiones (+{pct:.0f}%)")
                 elif diferencia < 0:
-                    st.warning(f"📉 El peso bajó {abs(diferencia):.1f} kg. Normal si estabas ajustando técnica.")
+                    st.warning(f"📉 El peso bajó {abs(diferencia):.1f} kg.")
                 else:
                     st.info("➡️ Peso estable. Puede ser momento de intentar subir.")
 
@@ -473,11 +490,11 @@ else:
             filas = []
             for nombre_ej, datos in progreso.items():
                 if datos:
-                    inicial  = datos[0]["peso_usado"]
-                    actual   = datos[-1]["peso_usado"]
-                    diff     = actual - inicial
+                    inicial   = datos[0]["peso_usado"]
+                    actual    = datos[-1]["peso_usado"]
+                    diff      = actual - inicial
                     if inicial > 0:
-                        pct      = (diff / inicial) * 100
+                        pct       = (diff / inicial) * 100
                         tendencia = "⬆️" if diff > 0 else ("⬇️" if diff < 0 else "➡️")
                         filas.append({
                             "Ejercicio": nombre_ej,
