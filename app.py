@@ -29,6 +29,72 @@ st.set_page_config(
 )
 
 # =====================================================
+# SELECTOR DE RPE CON BOTONES DE COLORES
+# =====================================================
+def selector_rpe(key, valor_defecto=7):
+    """
+    Muestra 10 botones del 1 al 10 para seleccionar el RPE.
+    - Verde  (1–4): Esfuerzo bajo
+    - Naranja (5–7): Esfuerzo medio
+    - Rojo   (8–10): Esfuerzo alto
+
+    Devuelve el valor seleccionado (int).
+    """
+
+    # Inicializar el valor en session_state si no existe
+    state_key = f"rpe_{key}"
+    if state_key not in st.session_state:
+        st.session_state[state_key] = valor_defecto
+
+    # CSS para los botones de colores
+    st.markdown("""
+    <style>
+    div[data-testid="column"] button {
+        width: 100% !important;
+        padding: 8px 0px !important;
+        font-weight: bold !important;
+        border-radius: 8px !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+    # Colores según nivel de esfuerzo
+    def color_rpe(n):
+        if n <= 4:
+            return "🟢"   # Verde = fácil
+        elif n <= 7:
+            return "🟠"   # Naranja = medio
+        else:
+            return "🔴"   # Rojo = alto
+
+    # Mostrar los 10 botones en una fila
+    cols = st.columns(10)
+    for i, col in enumerate(cols):
+        numero = i + 1
+        icono  = color_rpe(numero)
+        seleccionado = st.session_state[state_key] == numero
+
+        with col:
+            # El botón seleccionado muestra el número con el icono
+            # Los no seleccionados solo muestran el número
+            etiqueta = f"{icono}\n{numero}" if seleccionado else str(numero)
+            if st.button(etiqueta, key=f"rpe_btn_{key}_{numero}"):
+                st.session_state[state_key] = numero
+                st.rerun()
+
+    # Mostrar el valor seleccionado con su descripción
+    valor = st.session_state[state_key]
+    if valor <= 4:
+        st.caption(f"RPE {valor} — 🟢 Esfuerzo bajo · Te quedan muchas repeticiones en el tanque")
+    elif valor <= 7:
+        st.caption(f"RPE {valor} — 🟠 Esfuerzo medio · Te quedan 2–4 repeticiones")
+    else:
+        st.caption(f"RPE {valor} — 🔴 Esfuerzo alto · Estás cerca del límite")
+
+    return valor
+
+
+# =====================================================
 # INICIALIZAR SESSION STATE
 # =====================================================
 for key, default in {
@@ -276,14 +342,12 @@ else:
         if info_semana["semana_en_bloque"] == 8:
             st.warning("🔄 Esta semana es tu **semana de deload**. "
                        "Entrena con menos intensidad para que tu cuerpo se recupere.")
-
         if info_semana["semana_en_bloque"] == 7:
             st.info("⚠️ La próxima semana es tu semana de deload. ¡Aprieta fuerte esta semana!")
 
         progreso_bloque = info_semana["semana_en_bloque"] / 8
         st.progress(progreso_bloque,
                     text=f"Progreso del bloque: semana {info_semana['semana_en_bloque']}/8")
-
         st.divider()
 
         nombres_estructura = {
@@ -365,11 +429,9 @@ else:
 
         with st.expander("❓ ¿Qué es el RPE?"):
             st.write("""
-            - **1–5:** Muy fácil
-            - **6–7:** Moderado, quedan 3–4 reps en el tanque
-            - **8:** Difícil, quedan 1–2 reps
-            - **9:** Casi al límite
-            - **10:** Fallo total
+            - 🟢 **1–4:** Esfuerzo bajo — podrías hacer muchas más repeticiones
+            - 🟠 **5–7:** Esfuerzo medio — te quedan 2–4 repeticiones en el tanque
+            - 🔴 **8–10:** Esfuerzo alto — estás cerca del límite
             """)
 
         st.divider()
@@ -387,20 +449,33 @@ else:
             series_del_ejercicio = []
             for i in range(1, num_series + 1):
                 st.write(f"**Serie {i}**")
-                col1, col2, col3 = st.columns(3)
+                col1, col2 = st.columns(2)
                 with col1:
-                    peso_real = st.number_input("Peso (kg)", min_value=0.0, max_value=500.0,
-                                                value=float(peso_base), step=2.5,
-                                                key=f"{nombre_ej}_peso_{i}")
+                    peso_real = st.number_input(
+                        "Peso (kg)", min_value=0.0, max_value=500.0,
+                        value=float(peso_base), step=2.5,
+                        key=f"{nombre_ej}_peso_{i}"
+                    )
                 with col2:
-                    reps_real = st.number_input("Reps", min_value=0, max_value=50,
-                                                value=int(reps_obj), step=1,
-                                                key=f"{nombre_ej}_reps_{i}")
-                with col3:
-                    rpe_real = st.select_slider("RPE", options=[1,2,3,4,5,6,7,8,9,10],
-                                                value=fase_actual["rpe_objetivo"],
-                                                key=f"{nombre_ej}_rpe_{i}")
-                series_del_ejercicio.append({"peso": peso_real, "reps": reps_real, "rpe": rpe_real})
+                    reps_real = st.number_input(
+                        "Reps", min_value=0, max_value=50,
+                        value=int(reps_obj), step=1,
+                        key=f"{nombre_ej}_reps_{i}"
+                    )
+
+                # ← NUEVO: Selector RPE con botones de colores
+                st.write("**Esfuerzo (RPE):**")
+                rpe_real = selector_rpe(
+                    key=f"{nombre_ej}_s{i}",
+                    valor_defecto=fase_actual["rpe_objetivo"]
+                )
+
+                series_del_ejercicio.append({
+                    "peso": peso_real,
+                    "reps": reps_real,
+                    "rpe":  rpe_real
+                })
+                st.write("---")
 
             registros[nombre_ej] = {"series": series_del_ejercicio, "reps_objetivo": reps_obj}
             st.divider()
@@ -498,7 +573,6 @@ else:
             with st.container(border=True):
                 col_f1, col_f2, col_f3, col_f4 = st.columns([2, 1, 1, 1])
                 with col_f1:
-                    # ← CORRECCIÓN: sin asteriscos en nombres
                     if es_actual:
                         st.markdown(f"**▶️ {fase['nombre']}**")
                     else:
@@ -519,9 +593,9 @@ else:
 
         if resumen:
             col1, col2, col3 = st.columns(3)
-            col1.metric("Sesiones completadas",  resumen["total_sesiones"])
+            col1.metric("Sesiones completadas",   resumen["total_sesiones"])
             col2.metric("Ejercicios que subieron", resumen["ejercicios_subidos"])
-            col3.metric("% de progreso",          f"{resumen['pct_progreso']:.0f}%")
+            col3.metric("% de progreso",           f"{resumen['pct_progreso']:.0f}%")
         else:
             st.info("Completa tu primera sesión para ver las estadísticas del bloque.")
 
