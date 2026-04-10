@@ -123,42 +123,21 @@ def obtener_rutina(usuario_id):
 
 
 def actualizar_pesos_rutina(usuario_id, resultados_ia):
-    """
-    Actualiza los pesos sugeridos en la rutina guardada
-    usando los nuevos pesos decididos por el algoritmo de IA.
-
-    usuario_id    → ID del usuario
-    resultados_ia → lista de resultados del algoritmo, cada uno con:
-                    {"ejercicio": nombre, "nuevo_peso": float, ...}
-
-    Cómo funciona:
-    1. Carga la rutina actual de Supabase
-    2. Busca cada ejercicio que aparece en los resultados de la IA
-    3. Actualiza su peso_sugerido con el nuevo peso
-    4. Guarda la rutina actualizada en Supabase
-    """
-    # Cargar rutina actual
     rutina_actual = obtener_rutina(usuario_id)
     if not rutina_actual:
-        return  # Si no hay rutina, no hacemos nada
+        return None
 
-    # Construir un diccionario de nombre → nuevo_peso para búsqueda rápida
-    # Ejemplo: {"Press de banca con barra": 35.0, "Jalón al pecho": 37.5, ...}
     nuevos_pesos = {
         r["ejercicio"]: r["nuevo_peso"]
         for r in resultados_ia
     }
 
-    # Recorrer todos los días y ejercicios de la rutina
-    # y actualizar los pesos donde corresponda
     for dia in rutina_actual["dias"]:
         for ejercicio in dia["ejercicios"]:
             nombre = ejercicio["nombre"]
             if nombre in nuevos_pesos:
                 ejercicio["peso_sugerido"] = nuevos_pesos[nombre]
 
-    # Guardar la rutina actualizada en Supabase
-    # Primero obtenemos el ID de la fila de la rutina para actualizarla
     supabase = get_supabase_client()
     respuesta = (
         supabase.table("rutinas")
@@ -175,7 +154,63 @@ def actualizar_pesos_rutina(usuario_id, resultados_ia):
             "rutina_json": json.dumps(rutina_actual, ensure_ascii=False)
         }).eq("id", rutina_id).execute()
 
-    return rutina_actual  # Devolvemos la rutina ya actualizada
+    return rutina_actual
+
+
+# =====================================================
+# FUNCIONES DE BLOQUES ← NUEVAS
+# =====================================================
+
+def guardar_bloque(usuario_id, bloque):
+    """
+    Guarda el bloque de entrenamiento del usuario.
+    bloque → diccionario con numero_bloque, fecha_inicio, etc.
+    """
+    supabase = get_supabase_client()
+    datos = {
+        "usuario_id":  usuario_id,
+        "bloque_json": json.dumps(bloque, ensure_ascii=False)
+    }
+    supabase.table("bloques").insert(datos).execute()
+
+
+def obtener_bloque_actual(usuario_id):
+    """
+    Obtiene el bloque activo más reciente del usuario.
+    Devuelve el bloque o None si no tiene ninguno.
+    """
+    supabase = get_supabase_client()
+    respuesta = (
+        supabase.table("bloques")
+        .select("*")
+        .eq("usuario_id", usuario_id)
+        .order("created_at", desc=True)
+        .limit(1)
+        .execute()
+    )
+    if respuesta.data:
+        return json.loads(respuesta.data[0]["bloque_json"])
+    return None
+
+
+def actualizar_bloque(usuario_id, bloque):
+    """
+    Actualiza el bloque actual del usuario.
+    """
+    supabase = get_supabase_client()
+    respuesta = (
+        supabase.table("bloques")
+        .select("id")
+        .eq("usuario_id", usuario_id)
+        .order("created_at", desc=True)
+        .limit(1)
+        .execute()
+    )
+    if respuesta.data:
+        bloque_id = respuesta.data[0]["id"]
+        supabase.table("bloques").update({
+            "bloque_json": json.dumps(bloque, ensure_ascii=False)
+        }).eq("id", bloque_id).execute()
 
 
 # =====================================================

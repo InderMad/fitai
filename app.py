@@ -1,15 +1,21 @@
 # app.py
 import streamlit as st
 import pandas as pd
+from datetime import datetime
 from generador_rutinas import generar_rutina
 from algoritmo_ia import analizar_sesion_completa
+from bloques import (
+    crear_bloque_inicial, calcular_semana_del_bloque,
+    obtener_fase_actual, ajustar_rutina_por_fase,
+    generar_resumen_bloque
+)
 from database import (
     registrar_usuario, login_usuario, logout_usuario,
     guardar_perfil, obtener_perfil,
-    guardar_rutina, obtener_rutina,
+    guardar_rutina, obtener_rutina, actualizar_pesos_rutina,
     guardar_sesion, obtener_historial_sesiones,
     obtener_progreso_por_ejercicio,
-    actualizar_pesos_rutina,
+    guardar_bloque, obtener_bloque_actual, actualizar_bloque,
     get_supabase_client
 )
 
@@ -30,6 +36,7 @@ for key, default in {
     "usuario_id":        None,
     "perfil":            None,
     "rutina":            None,
+    "bloque":            None,
     "pantalla":          "rutina",
     "resultados_sesion": [],
     "dia_seleccionado":  None,
@@ -38,7 +45,7 @@ for key, default in {
     if key not in st.session_state:
         st.session_state[key] = default
 
-# ── Recuperar sesión automáticamente si hay token en la URL ──
+# ── Recuperar sesión automáticamente ──
 if not st.session_state.auth_user_id:
     try:
         token = st.query_params.get("token", None)
@@ -50,10 +57,12 @@ if not st.session_state.auth_user_id:
                 perfil_db = obtener_perfil(auth_id)
                 if perfil_db:
                     rutina_db = obtener_rutina(perfil_db["id"])
+                    bloque_db = obtener_bloque_actual(perfil_db["id"])
                     st.session_state.auth_user_id = auth_id
                     st.session_state.usuario_id   = perfil_db["id"]
                     st.session_state.perfil       = perfil_db
                     st.session_state.rutina       = rutina_db
+                    st.session_state.bloque       = bloque_db
                     st.session_state.pantalla     = "rutina"
     except Exception:
         pass
@@ -88,10 +97,12 @@ if not st.session_state.auth_user_id:
                     perfil_db = obtener_perfil(auth_id)
                     if perfil_db:
                         rutina_db = obtener_rutina(perfil_db["id"])
+                        bloque_db = obtener_bloque_actual(perfil_db["id"])
                         st.session_state.auth_user_id = auth_id
                         st.session_state.usuario_id   = perfil_db["id"]
                         st.session_state.perfil       = perfil_db
                         st.session_state.rutina       = rutina_db
+                        st.session_state.bloque       = bloque_db
                         st.session_state.pantalla     = "rutina"
                     else:
                         st.session_state.auth_user_id = auth_id
@@ -120,7 +131,6 @@ if not st.session_state.auth_user_id:
                 if resultado["ok"]:
                     if resultado["session"]:
                         st.query_params["token"] = resultado["session"].access_token
-                    st.success("✅ Cuenta creada correctamente. Ahora crea tu perfil.")
                     st.session_state.auth_user_id = resultado["user"].id
                     st.session_state.pantalla     = "crear_perfil"
                     st.rerun()
@@ -206,9 +216,14 @@ elif st.session_state.auth_user_id and not st.session_state.perfil:
             usuario_id = guardar_perfil(st.session_state.auth_user_id, perfil)
             rutina     = generar_rutina(perfil)
             guardar_rutina(usuario_id, rutina)
+            # Crear el bloque inicial
+            bloque = crear_bloque_inicial()
+            guardar_bloque(usuario_id, bloque)
+
         st.session_state.usuario_id = usuario_id
         st.session_state.perfil     = perfil
         st.session_state.rutina     = rutina
+        st.session_state.bloque     = bloque
         st.session_state.pantalla   = "rutina"
         st.rerun()
 
@@ -219,6 +234,19 @@ elif st.session_state.auth_user_id and not st.session_state.perfil:
 else:
     perfil = st.session_state.perfil
     rutina = st.session_state.rutina
+    bloque = st.session_state.bloque
+
+    # Si el usuario no tiene bloque todavía (usuarios creados antes de esta función),
+    # creamos uno ahora
+    if not bloque:
+        bloque = crear_bloque_inicial()
+        guardar_bloque(st.session_state.usuario_id, bloque)
+        st.session_state.bloque = bloque
+
+    # Calcular semana y fase actual
+    info_semana  = calcular_semana_del_bloque(bloque["fecha_inicio"])
+    fase_actual  = obtener_fase_actual(info_semana["semana_en_bloque"])
+    rutina_hoy   = ajustar_rutina_por_fase(rutina, fase_actual)
 
     # --------------------------------------------------
     # PANTALLA: RUTINA
@@ -236,7 +264,36 @@ else:
                     del st.session_state[key]
                 st.rerun()
 
-        st.success("Rutina cargada correctamente.")
+        # ── Banner de bloque y fase actual ──
+        color_fase = {
+            "blue":   "info",
+            "green":  "success",
+            "orange": "warning"
+        }.get(fase_actual["color"], "info")
+
+        getattr(st, color_fase)(
+            f"**Bloque {info_semana['numero_bloque']} · "
+            f"Semana {info_semana['semana_en_bloque']} de 8 · "
+            f"Fase: {fase_actual['nombre']}** — "
+            f"{fase_actual['descripcion']}"
+        )
+
+        # Aviso especial si es semana de deload
+        if info_semana["semana_en_bloque"] == 8:
+            st.warning("🔄 Esta semana es tu **semana de deload**. "
+                       "Entrena con menos intensidad para que tu cuerpo se recupere.")
+
+        # Aviso si queda 1 semana para el deload
+        if info_semana["semana_en_bloque"] == 7:
+            st.info("⚠️ La próxima semana es tu semana de deload. "
+                    "¡Aprieta fuerte esta semana!")
+
+        # Barra de progreso del bloque
+        progreso_bloque = info_semana["semana_en_bloque"] / 8
+        st.progress(progreso_bloque,
+                    text=f"Progreso del bloque: semana {info_semana['semana_en_bloque']}/8")
+
+        st.divider()
 
         nombres_estructura = {
             "fullbody":       "Fullbody",
@@ -246,19 +303,25 @@ else:
         nombre_estructura = nombres_estructura.get(rutina["estructura"], rutina["estructura"])
 
         col1, col2, col3 = st.columns(3)
-        col1.metric("Series",       f"{rutina['series']} series")
-        col2.metric("Repeticiones", f"{rutina['reps_min']}–{rutina['reps_max']} reps")
-        col3.metric("Descanso",     f"{rutina['descanso_seg']}s")
+        col1.metric("Series HOY",    f"{fase_actual['series']} series")
+        col2.metric("Repeticiones",  f"{rutina['reps_min']}–{rutina['reps_max']} reps")
+        col3.metric("RPE objetivo",  f"{fase_actual['rpe_objetivo']}/10")
         st.markdown(f"**Tipo de rutina:** {nombre_estructura}")
         st.divider()
 
-        if st.button("📈 Ver mi progreso", use_container_width=True):
-            st.session_state.pantalla = "progreso"
-            st.rerun()
+        col_nav1, col_nav2 = st.columns(2)
+        with col_nav1:
+            if st.button("📈 Ver mi progreso", use_container_width=True):
+                st.session_state.pantalla = "progreso"
+                st.rerun()
+        with col_nav2:
+            if st.button("📊 Resumen del bloque", use_container_width=True):
+                st.session_state.pantalla = "resumen_bloque"
+                st.rerun()
 
         st.divider()
         st.subheader("📋 ¿Listo para entrenar hoy?")
-        opciones_dias = [d["dia"] for d in rutina["dias"]]
+        opciones_dias = [d["dia"] for d in rutina_hoy["dias"]]
         dia_elegido   = st.selectbox("¿Qué día entrenas hoy?", opciones_dias)
 
         if st.button("🏋️ Empezar sesión de hoy →",
@@ -280,7 +343,7 @@ else:
 
         st.divider()
         st.subheader("📅 Tu rutina completa")
-        for dia in rutina["dias"]:
+        for dia in rutina_hoy["dias"]:
             with st.expander(f"📅 {dia['dia']} — {dia['enfoque']}"):
                 for i, ejercicio in enumerate(dia["ejercicios"], 1):
                     peso_texto = f"{ejercicio['peso_sugerido']} kg" if ejercicio["peso_sugerido"] else "Peso corporal"
@@ -301,11 +364,15 @@ else:
     elif st.session_state.pantalla == "sesion":
 
         dia_nombre     = st.session_state.dia_seleccionado
-        ejercicios_hoy = next(d["ejercicios"] for d in rutina["dias"] if d["dia"] == dia_nombre)
-        enfoque_hoy    = next(d["enfoque"]    for d in rutina["dias"] if d["dia"] == dia_nombre)
+        ejercicios_hoy = next(d["ejercicios"] for d in rutina_hoy["dias"] if d["dia"] == dia_nombre)
+        enfoque_hoy    = next(d["enfoque"]    for d in rutina_hoy["dias"] if d["dia"] == dia_nombre)
 
         st.title("🏋️ Sesión de hoy")
         st.subheader(f"📅 {dia_nombre} — {enfoque_hoy}")
+
+        # Banner de fase en la sesión
+        st.info(f"**Fase actual: {fase_actual['nombre']}** · "
+                f"{fase_actual['series']} series · RPE objetivo {fase_actual['rpe_objetivo']}")
 
         with st.expander("❓ ¿Qué es el RPE?"):
             st.write("""
@@ -323,10 +390,10 @@ else:
             nombre_ej  = ejercicio["nombre"]
             peso_base  = ejercicio["peso_sugerido"] or 20.0
             num_series = ejercicio["series"]
-            reps_obj   = ejercicio["reps_max"]
+            reps_obj   = rutina_hoy["reps_max"]
 
             st.subheader(f"💪 {nombre_ej}")
-            st.caption(f"Objetivo: {num_series} × {ejercicio['reps_min']}–{reps_obj} reps @ {peso_base} kg")
+            st.caption(f"Objetivo: {num_series} × {rutina_hoy['reps_min']}–{reps_obj} reps @ {peso_base} kg")
 
             series_del_ejercicio = []
             for i in range(1, num_series + 1):
@@ -342,7 +409,8 @@ else:
                                                 key=f"{nombre_ej}_reps_{i}")
                 with col3:
                     rpe_real = st.select_slider("RPE", options=[1,2,3,4,5,6,7,8,9,10],
-                                                value=7, key=f"{nombre_ej}_rpe_{i}")
+                                                value=fase_actual["rpe_objetivo"],
+                                                key=f"{nombre_ej}_rpe_{i}")
                 series_del_ejercicio.append({"peso": peso_real, "reps": reps_real, "rpe": rpe_real})
 
             registros[nombre_ej] = {"series": series_del_ejercicio, "reps_objetivo": reps_obj}
@@ -356,19 +424,13 @@ else:
         with col2:
             if st.button("✅ Finalizar sesión →", use_container_width=True, type="primary"):
                 registros_algoritmo = {n: d["series"] for n, d in registros.items()}
-                resultados = analizar_sesion_completa(registros_algoritmo, rutina["reps_max"])
+                resultados = analizar_sesion_completa(registros_algoritmo, rutina_hoy["reps_max"])
 
                 with st.spinner("Guardando y actualizando pesos..."):
-                    # 1. Guardar la sesión en el historial
                     guardar_sesion(st.session_state.usuario_id, dia_nombre, resultados)
-
-                    # 2. ← NUEVO: Actualizar los pesos en la rutina automáticamente
                     rutina_actualizada = actualizar_pesos_rutina(
-                        st.session_state.usuario_id,
-                        resultados
+                        st.session_state.usuario_id, resultados
                     )
-
-                    # 3. Actualizar la rutina en session_state para que se vea inmediatamente
                     if rutina_actualizada:
                         st.session_state.rutina = rutina_actualizada
 
@@ -392,6 +454,9 @@ else:
         col1.metric("⬆️ Suben",     subidas)
         col2.metric("➡️ Mantienen", mantiene)
         col3.metric("⬇️ Bajan",     bajadas)
+
+        # Mostrar en qué fase estamos
+        st.info(f"Semana {info_semana['semana_en_bloque']}/8 · Fase: {fase_actual['nombre']}")
         st.divider()
 
         for resultado in resultados:
@@ -421,6 +486,59 @@ else:
             st.session_state.pantalla = "rutina"
             st.session_state.resultados_sesion = []
             st.rerun()
+
+    # --------------------------------------------------
+    # PANTALLA: RESUMEN DEL BLOQUE ← NUEVA
+    # --------------------------------------------------
+    elif st.session_state.pantalla == "resumen_bloque":
+
+        st.title(f"📊 Bloque {info_semana['numero_bloque']}")
+        st.write(f"Iniciado el **{bloque['fecha_inicio']}** · "
+                 f"Semana actual: **{info_semana['semana_en_bloque']} de 8**")
+
+        if st.button("← Volver a la rutina"):
+            st.session_state.pantalla = "rutina"
+            st.rerun()
+
+        st.divider()
+
+        # Progreso visual del bloque con las 4 fases
+        st.subheader("🗓️ Fases del bloque")
+        for fase in [
+            {"nombre": "Adaptación",      "semanas": "1–2", "series": 3, "rpe": 7},
+            {"nombre": "Acumulación",     "semanas": "3–5", "series": 4, "rpe": 8},
+            {"nombre": "Intensificación", "semanas": "6–7", "series": 4, "rpe": 9},
+            {"nombre": "Deload",          "semanas": "8",   "series": 2, "rpe": 6},
+        ]:
+            es_actual = fase["nombre"] == fase_actual["nombre"]
+            with st.container(border=True):
+                col_f1, col_f2, col_f3, col_f4 = st.columns([2, 1, 1, 1])
+                with col_f1:
+                    marcador = "▶️ " if es_actual else "   "
+                    st.markdown(f"**{marcador}{fase['nombre']}**")
+                    st.caption(f"Semanas {fase['semanas']}")
+                with col_f2:
+                    st.metric("Series", fase["series"])
+                with col_f3:
+                    st.metric("RPE obj.", fase["rpe"])
+                with col_f4:
+                    if es_actual:
+                        st.success("ACTUAL")
+
+        st.divider()
+
+        # Estadísticas del bloque
+        st.subheader("📈 Estadísticas del bloque actual")
+        historial = obtener_historial_sesiones(st.session_state.usuario_id, limite=50)
+        resumen   = generar_resumen_bloque(historial, info_semana["numero_bloque"])
+
+        if resumen:
+            col1, col2, col3 = st.columns(3)
+            col1.metric("Sesiones completadas", resumen["total_sesiones"])
+            col2.metric("Ejercicios que subieron", resumen["ejercicios_subidos"])
+            col3.metric("% de progreso", f"{resumen['pct_progreso']:.0f}%")
+        else:
+            st.info("Completa tu primera sesión para ver las estadísticas del bloque.")
 
     # --------------------------------------------------
     # PANTALLA: PROGRESO
