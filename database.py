@@ -8,9 +8,7 @@ def get_supabase_client():
     url = os.environ.get("SUPABASE_URL")
     key = os.environ.get("SUPABASE_KEY")
     if not url or not key:
-        raise Exception(
-            "❌ No se encontraron las variables SUPABASE_URL y SUPABASE_KEY."
-        )
+        raise Exception("❌ No se encontraron las variables SUPABASE_URL y SUPABASE_KEY.")
     return create_client(url, key)
 
 
@@ -78,7 +76,6 @@ def obtener_perfil(auth_user_id):
     )
     if respuesta.data:
         perfil = respuesta.data[0]
-        # Deserializar músculos prioritarios de JSON a lista
         if isinstance(perfil.get("musculos_prioritarios"), str):
             try:
                 perfil["musculos_prioritarios"] = json.loads(perfil["musculos_prioritarios"])
@@ -228,3 +225,95 @@ def obtener_progreso_por_ejercicio(usuario_id):
                 "nuevo_peso": resultado["nuevo_peso"]
             })
     return progreso
+
+
+# =====================================================
+# FUNCIONES DE EJERCICIOS FAVORITOS ← NUEVAS
+# =====================================================
+
+def guardar_favoritos(usuario_id, favoritos):
+    """
+    Guarda la lista de ejercicios favoritos del usuario.
+    favoritos → lista de nombres de ejercicios
+    """
+    supabase = get_supabase_client()
+
+    # Primero comprobamos si ya tiene favoritos guardados
+    respuesta = (
+        supabase.table("favoritos")
+        .select("id")
+        .eq("usuario_id", usuario_id)
+        .execute()
+    )
+
+    datos = {
+        "usuario_id":     usuario_id,
+        "favoritos_json": json.dumps(favoritos, ensure_ascii=False)
+    }
+
+    if respuesta.data:
+        # Ya existe → actualizamos
+        supabase.table("favoritos").update({
+            "favoritos_json": json.dumps(favoritos, ensure_ascii=False)
+        }).eq("usuario_id", usuario_id).execute()
+    else:
+        # No existe → insertamos
+        supabase.table("favoritos").insert(datos).execute()
+
+
+def obtener_favoritos(usuario_id):
+    """
+    Obtiene la lista de ejercicios favoritos del usuario.
+    Devuelve una lista de nombres o lista vacía si no tiene.
+    """
+    supabase  = get_supabase_client()
+    respuesta = (
+        supabase.table("favoritos")
+        .select("*")
+        .eq("usuario_id", usuario_id)
+        .execute()
+    )
+    if respuesta.data:
+        return json.loads(respuesta.data[0]["favoritos_json"])
+    return []
+
+
+# =====================================================
+# FUNCIONES DE HISTORIAL DE NIVELES ← NUEVAS
+# =====================================================
+
+def guardar_niveles_sesion(usuario_id, niveles):
+    """
+    Guarda los niveles de fuerza calculados en una sesión.
+    niveles → lista de dicts con {ejercicio, nivel, nivel_idx, percentil}
+    """
+    supabase = get_supabase_client()
+    supabase.table("historial_niveles").insert({
+        "usuario_id":   usuario_id,
+        "niveles_json": json.dumps(niveles, ensure_ascii=False)
+    }).execute()
+
+
+def obtener_ultimo_nivel(usuario_id, ejercicio):
+    """
+    Obtiene el último nivel registrado para un ejercicio específico.
+    Útil para detectar si el usuario subió de nivel en esta sesión.
+    """
+    supabase  = get_supabase_client()
+    respuesta = (
+        supabase.table("historial_niveles")
+        .select("*")
+        .eq("usuario_id", usuario_id)
+        .order("created_at", desc=True)
+        .limit(10)
+        .execute()
+    )
+
+    # Buscar el nivel más reciente para este ejercicio
+    for fila in respuesta.data:
+        niveles = json.loads(fila["niveles_json"])
+        for n in niveles:
+            if n["ejercicio"] == ejercicio:
+                return n
+
+    return None
