@@ -2,6 +2,11 @@
 import streamlit as st
 from generador_rutinas import generar_rutina
 from algoritmo_ia import analizar_sesion_completa
+from database import (
+    guardar_usuario, buscar_usuario_por_nombre,
+    guardar_rutina, obtener_rutina,
+    guardar_sesion, obtener_historial_sesiones
+)
 
 # =====================================================
 # CONFIGURACIÓN
@@ -19,10 +24,12 @@ if "perfil_guardado" not in st.session_state:
     st.session_state.perfil_guardado = False
 if "perfil" not in st.session_state:
     st.session_state.perfil = {}
+if "usuario_id" not in st.session_state:
+    st.session_state.usuario_id = None
 if "rutina" not in st.session_state:
     st.session_state.rutina = None
 if "pantalla" not in st.session_state:
-    st.session_state.pantalla = "rutina"   # puede ser: "rutina", "sesion", "resultados"
+    st.session_state.pantalla = "rutina"
 if "resultados_sesion" not in st.session_state:
     st.session_state.resultados_sesion = []
 if "dia_seleccionado" not in st.session_state:
@@ -37,6 +44,30 @@ if not st.session_state.perfil_guardado:
     st.title("🏋️ Crea tu perfil de entrenamiento")
     st.write("Responde estas preguntas con sinceridad. Cuanto más precisas sean, mejor será tu rutina.")
 
+    # --- Opción de recuperar perfil existente ---
+    st.info("💡 ¿Ya tienes perfil? Escribe tu nombre y lo recuperamos automáticamente.")
+    nombre_recuperar = st.text_input("Nombre para recuperar perfil existente:",
+                                      placeholder="Escribe tu nombre y pulsa Enter")
+
+    if nombre_recuperar:
+        usuario_existente = buscar_usuario_por_nombre(nombre_recuperar)
+        if usuario_existente:
+            if st.button(f"✅ Recuperar perfil de {nombre_recuperar}"):
+                rutina_guardada = obtener_rutina(usuario_existente["id"])
+                if rutina_guardada:
+                    st.session_state.perfil      = usuario_existente
+                    st.session_state.usuario_id  = usuario_existente["id"]
+                    st.session_state.rutina      = rutina_guardada
+                    st.session_state.perfil_guardado = True
+                    st.rerun()
+                else:
+                    st.warning("Perfil encontrado pero sin rutina. Crea una nueva abajo.")
+        else:
+            st.caption("No se encontró ese nombre. Crea tu perfil nuevo abajo.")
+
+    st.divider()
+    st.subheader("➕ Crear perfil nuevo")
+
     st.header("1️⃣ Datos personales")
     nombre = st.text_input("¿Cómo te llamas?", placeholder="Escribe tu nombre aquí")
     col1, col2 = st.columns(2)
@@ -47,7 +78,7 @@ if not st.session_state.perfil_guardado:
     st.divider()
 
     st.header("2️⃣ Tu experiencia en el gimnasio")
-    nivel_texto = st.selectbox("¿Cuánto tiempo llevas entrenando de forma consistente?", options=[
+    nivel_texto = st.selectbox("¿Cuánto tiempo llevas entrenando?", options=[
         "Principiante — Menos de 6 meses",
         "Intermedio — Entre 6 meses y 2 años",
         "Avanzado — Más de 2 años"
@@ -65,18 +96,18 @@ if not st.session_state.perfil_guardado:
     st.divider()
 
     st.header("4️⃣ Tu disponibilidad semanal")
-    dias = st.select_slider("¿Cuántos días a la semana puedes entrenar?", options=[2,3,4,5,6], value=3)
+    dias = st.select_slider("¿Cuántos días a la semana?", options=[2,3,4,5,6], value=3)
     if dias <= 3:
-        st.info("💡 Haremos rutinas Fullbody — ideal para tu frecuencia.")
+        st.info("💡 Haremos rutinas Fullbody.")
     elif dias == 4:
-        st.info("💡 Haremos Torso/Pierna — buen equilibrio volumen/recuperación.")
+        st.info("💡 Haremos Torso/Pierna.")
     else:
-        st.info("💡 Haremos Push/Pull/Legs — máxima especialización por grupo muscular.")
-    minutos = st.selectbox("¿Cuánto tiempo tienes por sesión?", options=[30,45,60,90],
+        st.info("💡 Haremos Push/Pull/Legs.")
+    minutos = st.selectbox("¿Cuánto tiempo por sesión?", options=[30,45,60,90],
                            index=2, format_func=lambda x: f"{x} minutos")
     st.divider()
 
-    st.header("5️⃣ Tu equipamiento disponible")
+    st.header("5️⃣ Tu equipamiento")
     equipamiento = st.radio("¿Con qué equipamiento cuentas?", options=[
         "🏠 Sin equipamiento (solo peso corporal)",
         "🏠 Tengo mancuernas en casa",
@@ -85,10 +116,10 @@ if not st.session_state.perfil_guardado:
     st.divider()
 
     st.header("6️⃣ Lesiones o limitaciones")
-    tiene_lesiones = st.toggle("¿Tienes alguna lesión o limitación física actualmente?")
+    tiene_lesiones = st.toggle("¿Tienes alguna lesión actualmente?")
     lesiones_texto = ""
     if tiene_lesiones:
-        lesiones_texto = st.text_area("Descríbela brevemente:", placeholder="Ejemplo: molestias en rodilla derecha")
+        lesiones_texto = st.text_area("Descríbela:", placeholder="Ejemplo: molestias en rodilla derecha")
     st.divider()
 
     boton_guardar = st.button("Guardar perfil y generar mi rutina →",
@@ -102,27 +133,35 @@ if not st.session_state.perfil_guardado:
             "objetivo": objetivo, "dias": dias, "minutos": minutos,
             "equipamiento": equipamiento, "lesiones": lesiones_texto
         }
+
+        with st.spinner("Guardando tu perfil..."):
+            # Guardar en Supabase y obtener el ID
+            usuario_id = guardar_usuario(perfil)
+            rutina     = generar_rutina(perfil)
+            guardar_rutina(usuario_id, rutina)
+
         st.session_state.perfil          = perfil
-        st.session_state.rutina          = generar_rutina(perfil)
+        st.session_state.usuario_id      = usuario_id
+        st.session_state.rutina          = rutina
         st.session_state.perfil_guardado = True
         st.session_state.pantalla        = "rutina"
         st.rerun()
 
 
 # =====================================================
-# PANTALLAS PRINCIPALES (una vez el perfil está guardado)
+# PANTALLAS PRINCIPALES
 # =====================================================
 else:
     perfil = st.session_state.perfil
     rutina = st.session_state.rutina
 
     # --------------------------------------------------
-    # PANTALLA 2: VISTA DE RUTINA COMPLETA
+    # PANTALLA 2: VISTA DE RUTINA
     # --------------------------------------------------
     if st.session_state.pantalla == "rutina":
 
         st.title(f"💪 Tu rutina, {perfil['nombre']}")
-        st.success("Rutina generada correctamente según tu perfil.")
+        st.success("Rutina cargada correctamente.")
 
         nombres_estructura = {
             "fullbody":       "Fullbody",
@@ -138,12 +177,9 @@ else:
         st.markdown(f"**Tipo de rutina:** {nombre_estructura}")
         st.divider()
 
-        # Botón para ir a registrar una sesión
         st.subheader("📋 ¿Listo para entrenar hoy?")
-        st.write("Selecciona el día de hoy y empieza a registrar tu sesión:")
-
         opciones_dias = [d["dia"] for d in rutina["dias"]]
-        dia_elegido = st.selectbox("¿Qué día entrenas hoy?", opciones_dias)
+        dia_elegido   = st.selectbox("¿Qué día entrenas hoy?", opciones_dias)
 
         if st.button("🏋️ Empezar sesión de hoy →", use_container_width=True, type="primary"):
             st.session_state.dia_seleccionado = dia_elegido
@@ -152,7 +188,19 @@ else:
 
         st.divider()
 
-        # Mostrar la rutina completa debajo
+        # Historial de sesiones anteriores
+        if st.session_state.usuario_id:
+            historial = obtener_historial_sesiones(st.session_state.usuario_id, limite=5)
+            if historial:
+                st.subheader("📈 Tus últimas sesiones")
+                for sesion in historial:
+                    with st.expander(f"📅 {sesion['fecha']} — {sesion['dia']}"):
+                        for resultado in sesion["resultados"]:
+                            emoji = resultado.get("emoji", "➡️")
+                            st.write(f"{emoji} **{resultado['ejercicio']}** → {resultado['nuevo_peso']} kg")
+
+        st.divider()
+
         st.subheader("📅 Tu rutina completa")
         for dia in rutina["dias"]:
             with st.expander(f"📅 {dia['dia']} — {dia['enfoque']}"):
@@ -180,21 +228,14 @@ else:
     # --------------------------------------------------
     elif st.session_state.pantalla == "sesion":
 
-        dia_nombre = st.session_state.dia_seleccionado
+        dia_nombre    = st.session_state.dia_seleccionado
+        ejercicios_hoy = next(d["ejercicios"] for d in rutina["dias"] if d["dia"] == dia_nombre)
+        enfoque_hoy    = next(d["enfoque"]    for d in rutina["dias"] if d["dia"] == dia_nombre)
 
-        # Encontrar los ejercicios del día seleccionado
-        ejercicios_hoy = next(
-            d["ejercicios"] for d in rutina["dias"] if d["dia"] == dia_nombre
-        )
-        enfoque_hoy = next(
-            d["enfoque"] for d in rutina["dias"] if d["dia"] == dia_nombre
-        )
-
-        st.title(f"🏋️ Sesión de hoy")
+        st.title("🏋️ Sesión de hoy")
         st.subheader(f"📅 {dia_nombre} — {enfoque_hoy}")
         st.write("Registra el peso, repeticiones y esfuerzo de cada serie.")
 
-        # Explicación del RPE para que el usuario sepa qué marcar
         with st.expander("❓ ¿Qué es el RPE?"):
             st.write("""
             El **RPE** (Esfuerzo Percibido) es una escala del 1 al 10:
@@ -209,7 +250,6 @@ else:
 
         st.divider()
 
-        # Diccionario donde guardaremos los registros de esta sesión
         registros = {}
 
         for ejercicio in ejercicios_hoy:
@@ -229,75 +269,65 @@ else:
 
                 with col1:
                     peso_real = st.number_input(
-                        "Peso (kg)",
-                        min_value=0.0,
-                        max_value=500.0,
-                        value=float(peso_base),
-                        step=2.5,
-                        key=f"{nombre_ej}_peso_{i}",
-                        label_visibility="visible"
+                        "Peso (kg)", min_value=0.0, max_value=500.0,
+                        value=float(peso_base), step=2.5,
+                        key=f"{nombre_ej}_peso_{i}"
                     )
                 with col2:
                     reps_real = st.number_input(
-                        "Reps",
-                        min_value=0,
-                        max_value=50,
-                        value=int(reps_obj),
-                        step=1,
+                        "Reps", min_value=0, max_value=50,
+                        value=int(reps_obj), step=1,
                         key=f"{nombre_ej}_reps_{i}"
                     )
                 with col3:
                     rpe_real = st.select_slider(
-                        "RPE",
-                        options=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
-                        value=7,
-                        key=f"{nombre_ej}_rpe_{i}"
+                        "RPE", options=[1,2,3,4,5,6,7,8,9,10],
+                        value=7, key=f"{nombre_ej}_rpe_{i}"
                     )
 
                 series_del_ejercicio.append({
-                    "peso": peso_real,
-                    "reps": reps_real,
-                    "rpe":  rpe_real
+                    "peso": peso_real, "reps": reps_real, "rpe": rpe_real
                 })
 
             registros[nombre_ej] = {
-                "series":       series_del_ejercicio,
+                "series": series_del_ejercicio,
                 "reps_objetivo": reps_obj
             }
-
             st.divider()
 
-        # Botones de acción
         col_btn1, col_btn2 = st.columns(2)
-
         with col_btn1:
             if st.button("← Volver a la rutina"):
                 st.session_state.pantalla = "rutina"
                 st.rerun()
 
         with col_btn2:
-            if st.button("✅ Finalizar sesión y ver análisis →",
-                         use_container_width=True, type="primary"):
+            if st.button("✅ Finalizar sesión →", use_container_width=True, type="primary"):
 
-                # Preparar los datos en el formato que espera el algoritmo
                 registros_para_algoritmo = {
                     nombre: datos["series"]
                     for nombre, datos in registros.items()
                 }
 
-                # Ejecutar el algoritmo de IA
                 resultados = analizar_sesion_completa(
                     registros_para_algoritmo,
                     rutina["reps_max"]
                 )
 
-                # Guardar resultados y cambiar de pantalla
+                # Guardar sesión en Supabase
+                with st.spinner("Guardando sesión..."):
+                    guardar_sesion(
+                        st.session_state.usuario_id,
+                        dia_nombre,
+                        resultados
+                    )
+
                 st.session_state.resultados_sesion = resultados
                 st.session_state.pantalla = "resultados"
                 st.rerun()
 
     # --------------------------------------------------
-    # PANTALLA 4: RESULTADOS Y ANÁLISIS DE LA IA
+    # PANTALLA 4: RESULTADOS
     # --------------------------------------------------
     elif st.session_state.pantalla == "resultados":
 
@@ -306,37 +336,26 @@ else:
 
         resultados = st.session_state.resultados_sesion
 
-        # Contadores para el resumen
         subidas  = sum(1 for r in resultados if r["decision"] == "subir")
         bajadas  = sum(1 for r in resultados if r["decision"] == "bajar")
         mantiene = sum(1 for r in resultados if r["decision"] == "mantener")
 
-        # Resumen rápido en métricas
         col1, col2, col3 = st.columns(3)
-        col1.metric("⬆️ Suben de peso",    subidas)
-        col2.metric("➡️ Se mantienen",     mantiene)
-        col3.metric("⬇️ Bajan de peso",    bajadas)
+        col1.metric("⬆️ Suben de peso",  subidas)
+        col2.metric("➡️ Se mantienen",   mantiene)
+        col3.metric("⬇️ Bajan de peso",  bajadas)
 
         st.divider()
 
-        # Detalle por ejercicio
         for resultado in resultados:
-            color_map = {
-                "green":  "🟢",
-                "blue":   "🔵",
-                "orange": "🟠"
-            }
-            icono_color = color_map.get(resultado["color"], "⚪")
-
             with st.container(border=True):
                 st.markdown(f"### {resultado['emoji']} {resultado['ejercicio']}")
 
                 col1, col2, col3 = st.columns(3)
-                col1.metric("Peso usado",      f"{resultado['peso_usado']:.1f} kg")
-                col2.metric("% Reps logradas", f"{resultado['pct_reps']:.0f}%")
-                col3.metric("RPE promedio",     f"{resultado['rpe_promedio']:.1f}")
+                col1.metric("Peso usado",       f"{resultado['peso_usado']:.1f} kg")
+                col2.metric("% Reps logradas",  f"{resultado['pct_reps']:.0f}%")
+                col3.metric("RPE promedio",      f"{resultado['rpe_promedio']:.1f}")
 
-                # El mensaje explicativo de la decisión
                 if resultado["decision"] == "subir":
                     st.success(f"**Próxima sesión:** {resultado['mensaje']}")
                 elif resultado["decision"] == "bajar":
@@ -346,18 +365,14 @@ else:
 
         st.divider()
 
-        # Mensaje motivacional global
         if subidas > bajadas:
             st.balloons()
             st.success("🎉 ¡Gran sesión! Estás progresando en la mayoría de ejercicios.")
         elif bajadas > subidas:
-            st.warning("💪 Sesión exigente. La IA ha ajustado los pesos para que la próxima sea más productiva.")
+            st.warning("💪 Sesión exigente. La IA ha ajustado los pesos para la próxima.")
         else:
-            st.info("✅ Sesión sólida. Mantén la consistencia y los resultados llegarán.")
+            st.info("✅ Sesión sólida. Mantén la consistencia.")
 
-        st.divider()
-
-        # Botón para volver
         if st.button("← Volver a mi rutina", use_container_width=True, type="primary"):
             st.session_state.pantalla = "rutina"
             st.session_state.resultados_sesion = []
