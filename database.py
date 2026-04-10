@@ -20,15 +20,6 @@ def get_supabase_client():
 # =====================================================
 
 def registrar_usuario(email, password):
-    """
-    Crea una nueva cuenta con email y contraseña.
-    Devuelve el objeto de sesión si funciona, o un mensaje de error.
-
-    Supabase se encarga de:
-    - Verificar que el email no está ya registrado
-    - Cifrar la contraseña (nunca se guarda en texto plano)
-    - Generar un ID único para el usuario
-    """
     supabase = get_supabase_client()
     try:
         respuesta = supabase.auth.sign_up({
@@ -43,10 +34,6 @@ def registrar_usuario(email, password):
 
 
 def login_usuario(email, password):
-    """
-    Inicia sesión con email y contraseña.
-    Devuelve la sesión si las credenciales son correctas, o un error.
-    """
     supabase = get_supabase_client()
     try:
         respuesta = supabase.auth.sign_in_with_password({
@@ -61,9 +48,6 @@ def login_usuario(email, password):
 
 
 def logout_usuario():
-    """
-    Cierra la sesión del usuario actual.
-    """
     supabase = get_supabase_client()
     try:
         supabase.auth.sign_out()
@@ -73,14 +57,10 @@ def logout_usuario():
 
 
 # =====================================================
-# FUNCIONES DE PERFIL DE USUARIO
+# FUNCIONES DE PERFIL
 # =====================================================
 
 def guardar_perfil(auth_user_id, perfil):
-    """
-    Guarda el perfil del usuario vinculado a su cuenta de login.
-    Usa auth_user_id para conectar el perfil con la cuenta de autenticación.
-    """
     supabase = get_supabase_client()
     datos = {
         "auth_user_id":  auth_user_id,
@@ -100,10 +80,6 @@ def guardar_perfil(auth_user_id, perfil):
 
 
 def obtener_perfil(auth_user_id):
-    """
-    Obtiene el perfil de un usuario por su auth_user_id.
-    Devuelve el perfil o None si no tiene perfil creado todavía.
-    """
     supabase = get_supabase_client()
     respuesta = (
         supabase.table("usuarios")
@@ -144,6 +120,62 @@ def obtener_rutina(usuario_id):
     if respuesta.data:
         return json.loads(respuesta.data[0]["rutina_json"])
     return None
+
+
+def actualizar_pesos_rutina(usuario_id, resultados_ia):
+    """
+    Actualiza los pesos sugeridos en la rutina guardada
+    usando los nuevos pesos decididos por el algoritmo de IA.
+
+    usuario_id    → ID del usuario
+    resultados_ia → lista de resultados del algoritmo, cada uno con:
+                    {"ejercicio": nombre, "nuevo_peso": float, ...}
+
+    Cómo funciona:
+    1. Carga la rutina actual de Supabase
+    2. Busca cada ejercicio que aparece en los resultados de la IA
+    3. Actualiza su peso_sugerido con el nuevo peso
+    4. Guarda la rutina actualizada en Supabase
+    """
+    # Cargar rutina actual
+    rutina_actual = obtener_rutina(usuario_id)
+    if not rutina_actual:
+        return  # Si no hay rutina, no hacemos nada
+
+    # Construir un diccionario de nombre → nuevo_peso para búsqueda rápida
+    # Ejemplo: {"Press de banca con barra": 35.0, "Jalón al pecho": 37.5, ...}
+    nuevos_pesos = {
+        r["ejercicio"]: r["nuevo_peso"]
+        for r in resultados_ia
+    }
+
+    # Recorrer todos los días y ejercicios de la rutina
+    # y actualizar los pesos donde corresponda
+    for dia in rutina_actual["dias"]:
+        for ejercicio in dia["ejercicios"]:
+            nombre = ejercicio["nombre"]
+            if nombre in nuevos_pesos:
+                ejercicio["peso_sugerido"] = nuevos_pesos[nombre]
+
+    # Guardar la rutina actualizada en Supabase
+    # Primero obtenemos el ID de la fila de la rutina para actualizarla
+    supabase = get_supabase_client()
+    respuesta = (
+        supabase.table("rutinas")
+        .select("id")
+        .eq("usuario_id", usuario_id)
+        .order("created_at", desc=True)
+        .limit(1)
+        .execute()
+    )
+
+    if respuesta.data:
+        rutina_id = respuesta.data[0]["id"]
+        supabase.table("rutinas").update({
+            "rutina_json": json.dumps(rutina_actual, ensure_ascii=False)
+        }).eq("id", rutina_id).execute()
+
+    return rutina_actual  # Devolvemos la rutina ya actualizada
 
 
 # =====================================================

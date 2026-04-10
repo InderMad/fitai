@@ -9,6 +9,7 @@ from database import (
     guardar_rutina, obtener_rutina,
     guardar_sesion, obtener_historial_sesiones,
     obtener_progreso_por_ejercicio,
+    actualizar_pesos_rutina,
     get_supabase_client
 )
 
@@ -55,7 +56,7 @@ if not st.session_state.auth_user_id:
                     st.session_state.rutina       = rutina_db
                     st.session_state.pantalla     = "rutina"
     except Exception:
-        pass  # Token inválido o expirado → mostrar login normal
+        pass
 
 
 # =====================================================
@@ -69,34 +70,22 @@ if not st.session_state.auth_user_id:
 
     tab_login, tab_registro = st.tabs(["🔑 Iniciar sesión", "✨ Crear cuenta"])
 
-    # --------------------------------------------------
-    # TAB 1: LOGIN
-    # --------------------------------------------------
     with tab_login:
         st.subheader("Bienvenido de vuelta")
-
-        email_login    = st.text_input("Email", key="email_login",
-                                        placeholder="tu@email.com")
-        password_login = st.text_input("Contraseña", type="password",
-                                        key="pass_login",
+        email_login    = st.text_input("Email", key="email_login", placeholder="tu@email.com")
+        password_login = st.text_input("Contraseña", type="password", key="pass_login",
                                         placeholder="Tu contraseña")
-
         if st.button("Entrar →", use_container_width=True, type="primary"):
             if not email_login or not password_login:
                 st.error("Por favor rellena el email y la contraseña.")
             else:
                 with st.spinner("Verificando credenciales..."):
                     resultado = login_usuario(email_login, password_login)
-
                 if resultado["ok"]:
                     auth_id = resultado["user"].id
-
-                    # Guardar token en la URL para persistir sesión
                     if resultado["session"]:
                         st.query_params["token"] = resultado["session"].access_token
-
                     perfil_db = obtener_perfil(auth_id)
-
                     if perfil_db:
                         rutina_db = obtener_rutina(perfil_db["id"])
                         st.session_state.auth_user_id = auth_id
@@ -107,26 +96,17 @@ if not st.session_state.auth_user_id:
                     else:
                         st.session_state.auth_user_id = auth_id
                         st.session_state.pantalla     = "crear_perfil"
-
                     st.rerun()
                 else:
                     st.error(f"❌ {resultado['error']}")
 
-    # --------------------------------------------------
-    # TAB 2: REGISTRO
-    # --------------------------------------------------
     with tab_registro:
         st.subheader("Crea tu cuenta gratuita")
-
-        email_reg    = st.text_input("Email", key="email_reg",
-                                      placeholder="tu@email.com")
-        password_reg = st.text_input("Contraseña", type="password",
-                                      key="pass_reg",
+        email_reg    = st.text_input("Email", key="email_reg", placeholder="tu@email.com")
+        password_reg = st.text_input("Contraseña", type="password", key="pass_reg",
                                       placeholder="Mínimo 6 caracteres")
-        password_rep = st.text_input("Repite la contraseña", type="password",
-                                      key="pass_rep",
+        password_rep = st.text_input("Repite la contraseña", type="password", key="pass_rep",
                                       placeholder="Repite la contraseña")
-
         if st.button("Crear cuenta →", use_container_width=True, type="primary"):
             if not email_reg or not password_reg:
                 st.error("Rellena todos los campos.")
@@ -137,12 +117,9 @@ if not st.session_state.auth_user_id:
             else:
                 with st.spinner("Creando tu cuenta..."):
                     resultado = registrar_usuario(email_reg, password_reg)
-
                 if resultado["ok"]:
-                    # Guardar token en la URL
                     if resultado["session"]:
                         st.query_params["token"] = resultado["session"].access_token
-
                     st.success("✅ Cuenta creada correctamente. Ahora crea tu perfil.")
                     st.session_state.auth_user_id = resultado["user"].id
                     st.session_state.pantalla     = "crear_perfil"
@@ -229,7 +206,6 @@ elif st.session_state.auth_user_id and not st.session_state.perfil:
             usuario_id = guardar_perfil(st.session_state.auth_user_id, perfil)
             rutina     = generar_rutina(perfil)
             guardar_rutina(usuario_id, rutina)
-
         st.session_state.usuario_id = usuario_id
         st.session_state.perfil     = perfil
         st.session_state.rutina     = rutina
@@ -255,7 +231,7 @@ else:
         with col_logout:
             if st.button("Salir", use_container_width=True):
                 logout_usuario()
-                st.query_params.clear()  # Limpiar token de la URL
+                st.query_params.clear()
                 for key in list(st.session_state.keys()):
                     del st.session_state[key]
                 st.rerun()
@@ -381,8 +357,21 @@ else:
             if st.button("✅ Finalizar sesión →", use_container_width=True, type="primary"):
                 registros_algoritmo = {n: d["series"] for n, d in registros.items()}
                 resultados = analizar_sesion_completa(registros_algoritmo, rutina["reps_max"])
-                with st.spinner("Guardando..."):
+
+                with st.spinner("Guardando y actualizando pesos..."):
+                    # 1. Guardar la sesión en el historial
                     guardar_sesion(st.session_state.usuario_id, dia_nombre, resultados)
+
+                    # 2. ← NUEVO: Actualizar los pesos en la rutina automáticamente
+                    rutina_actualizada = actualizar_pesos_rutina(
+                        st.session_state.usuario_id,
+                        resultados
+                    )
+
+                    # 3. Actualizar la rutina en session_state para que se vea inmediatamente
+                    if rutina_actualizada:
+                        st.session_state.rutina = rutina_actualizada
+
                 st.session_state.resultados_sesion = resultados
                 st.session_state.pantalla = "resultados"
                 st.rerun()
