@@ -4,6 +4,7 @@ import pandas as pd
 from datetime import datetime
 from generador_rutinas import generar_rutina
 from algoritmo_ia import analizar_sesion_completa
+from ia_feedback import generar_feedback_sesion
 from bloques import (
     crear_bloque_inicial, calcular_semana_del_bloque,
     obtener_fase_actual, ajustar_rutina_por_fase,
@@ -75,7 +76,8 @@ for key, default in {
     "pantalla":          "rutina",
     "resultados_sesion": [],
     "dia_seleccionado":  None,
-    "auth_pantalla":     "login"
+    "auth_pantalla":     "login",
+    "feedback_ia":       None
 }.items():
     if key not in st.session_state:
         st.session_state[key] = default
@@ -191,7 +193,6 @@ elif st.session_state.auth_user_id and not st.session_state.perfil:
                                 value=70.0, step=0.5)
     st.divider()
 
-    # ── Género — pregunta simple y neutra ──
     st.header("2️⃣ Género")
     st.caption("Nos ayuda a personalizar el enfoque muscular de tu rutina.")
     genero = st.radio(
@@ -224,27 +225,25 @@ elif st.session_state.auth_user_id and not st.session_state.perfil:
     ], label_visibility="collapsed")
     st.divider()
 
-    # ── Músculos prioritarios — sin preselección ──
     st.header("5️⃣ ¿En qué músculos quieres enfocarte más?")
     st.caption("Recibirán el doble de ejercicios en tu rutina. Puedes elegir varios o ninguno.")
 
     opciones_musculos = {
-        "🍑 Glúteos":    "gluteos",
-        "🦵 Piernas":    "piernas",
-        "🫁 Pecho":      "pecho",      # ← icono cambiado
-        "🔙 Espalda":    "espalda",
-        "🥥 Hombros":    "hombros",    # ← coco para hombros
-        "💪 Bíceps":     "biceps",
-        "🔱 Tríceps":    "triceps",
+        "🍑 Glúteos":  "gluteos",
+        "🦵 Piernas":  "piernas",
+        "🫁 Pecho":    "pecho",
+        "🔙 Espalda":  "espalda",
+        "🥥 Hombros":  "hombros",
+        "💪 Bíceps":   "biceps",
+        "🔱 Tríceps":  "triceps",
     }
 
     musculos_seleccionados = st.multiselect(
         "Selecciona tus músculos prioritarios (opcional):",
         options=list(opciones_musculos.keys()),
-        default=[]                     # ← sin preselección para nadie
+        default=[]
     )
     musculos_prioritarios = [opciones_musculos[m] for m in musculos_seleccionados]
-
     st.divider()
 
     st.header("6️⃣ Disponibilidad")
@@ -513,19 +512,27 @@ else:
             if st.button("✅ Finalizar sesión →", use_container_width=True, type="primary"):
                 registros_algoritmo = {n: d["series"] for n, d in registros.items()}
                 resultados = analizar_sesion_completa(registros_algoritmo, rutina_hoy["reps_max"])
-                with st.spinner("Guardando y actualizando pesos..."):
+
+                with st.spinner("Guardando y analizando tu sesión..."):
                     guardar_sesion(st.session_state.usuario_id, dia_nombre, resultados)
                     rutina_actualizada = actualizar_pesos_rutina(
                         st.session_state.usuario_id, resultados
                     )
                     if rutina_actualizada:
                         st.session_state.rutina = rutina_actualizada
+
+                    # ← NUEVO: Generar feedback con Claude
+                    feedback = generar_feedback_sesion(
+                        perfil, resultados, fase_actual, info_semana
+                    )
+                    st.session_state.feedback_ia = feedback
+
                 st.session_state.resultados_sesion = resultados
                 st.session_state.pantalla = "resultados"
                 st.rerun()
 
     # --------------------------------------------------
-    # PANTALLA: RESULTADOS
+    # PANTALLA: RESULTADOS ← Añadimos el feedback aquí
     # --------------------------------------------------
     elif st.session_state.pantalla == "resultados":
 
@@ -542,6 +549,15 @@ else:
         col3.metric("⬇️ Bajan",     bajadas)
         st.info(f"Semana {info_semana['semana_en_bloque']}/8 · Fase: {fase_actual['nombre']}")
         st.divider()
+
+        # ← NUEVO: Mostrar feedback de la IA si está disponible
+        feedback = st.session_state.get("feedback_ia")
+        if feedback:
+            with st.container(border=True):
+                st.markdown("### 🤖 Tu entrenador IA")
+                st.write(feedback)
+
+            st.divider()
 
         for resultado in resultados:
             with st.container(border=True):
@@ -567,8 +583,9 @@ else:
             st.info("✅ Sesión sólida.")
 
         if st.button("← Volver a mi rutina", use_container_width=True, type="primary"):
-            st.session_state.pantalla = "rutina"
+            st.session_state.pantalla    = "rutina"
             st.session_state.resultados_sesion = []
+            st.session_state.feedback_ia = None
             st.rerun()
 
     # --------------------------------------------------
