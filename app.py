@@ -73,9 +73,6 @@ def selector_rpe(key, valor_defecto=7):
 # COMPONENTE: BARRA DE NIVEL DE FUERZA
 # =====================================================
 def mostrar_nivel_fuerza(resultado_nivel):
-    """
-    Muestra la barra visual de nivel de fuerza y el texto del percentil.
-    """
     if not resultado_nivel:
         return
 
@@ -86,7 +83,6 @@ def mostrar_nivel_fuerza(resultado_nivel):
     umbrales  = resultado_nivel["umbrales_kg"]
     siguiente = resultado_nivel["siguiente_nivel"]
 
-    # Color según nivel
     colores_nivel = {
         "Principiante": "🔵",
         "Novato":       "🟢",
@@ -96,43 +92,33 @@ def mostrar_nivel_fuerza(resultado_nivel):
     }
     icono = colores_nivel.get(nivel, "⚪")
 
-    # Mostrar nivel actual y percentil
     col1, col2 = st.columns(2)
     with col1:
         st.metric("Nivel", f"{icono} {nivel}")
     with col2:
         st.metric("Top mundial", f"{100 - percentil}%")
 
-    # Barra de progreso visual
-    # Calculamos qué % del camino estamos dentro del nivel actual
     if nivel_idx < len(NIVELES) - 1:
-        umbral_actual   = umbrales[nivel_idx]
+        umbral_actual    = umbrales[nivel_idx]
         umbral_siguiente = umbrales[nivel_idx + 1]
         if umbral_siguiente > umbral_actual:
             pct_dentro_nivel = min((rm1 - umbral_actual) / (umbral_siguiente - umbral_actual), 1.0)
             pct_dentro_nivel = max(pct_dentro_nivel, 0.0)
         else:
             pct_dentro_nivel = 1.0
-        # Progreso global = nivel completos + fracción del nivel actual
         progreso_global = (nivel_idx + pct_dentro_nivel) / (len(NIVELES) - 1)
     else:
         progreso_global = 1.0
 
-    st.progress(
-        progreso_global,
-        text=f"Principiante → Novato → Intermedio → Avanzado → Elite"
-    )
-
-    # 1RM estimado
+    st.progress(progreso_global,
+                text="Principiante → Novato → Intermedio → Avanzado → Elite")
     st.caption(f"Tu 1RM estimado: **{rm1} kg**")
 
-    # Umbrales de referencia
     with st.expander("📊 Ver umbrales de referencia"):
         for i, (nombre_nivel, umbral) in enumerate(zip(NIVELES, umbrales)):
             marcador = "▶️ " if nombre_nivel == nivel else "   "
             st.write(f"{marcador}**{nombre_nivel}:** {umbral} kg")
 
-    # Info del siguiente nivel
     if siguiente:
         st.info(
             f"🎯 Para llegar a **{siguiente['nombre']}** necesitas levantar "
@@ -170,11 +156,11 @@ if not st.session_state.auth_user_id:
             supabase  = get_supabase_client()
             sesion    = supabase.auth.get_user(token)
             if sesion and sesion.user:
-                auth_id   = sesion.user.id
-                perfil_db = obtener_perfil(auth_id)
+                auth_id      = sesion.user.id
+                perfil_db    = obtener_perfil(auth_id)
                 if perfil_db:
-                    rutina_db   = obtener_rutina(perfil_db["id"])
-                    bloque_db   = obtener_bloque_actual(perfil_db["id"])
+                    rutina_db    = obtener_rutina(perfil_db["id"])
+                    bloque_db    = obtener_bloque_actual(perfil_db["id"])
                     favoritos_db = obtener_favoritos(perfil_db["id"])
                     st.session_state.auth_user_id = auth_id
                     st.session_state.usuario_id   = perfil_db["id"]
@@ -278,7 +264,7 @@ elif st.session_state.auth_user_id and not st.session_state.perfil:
     st.divider()
 
     st.header("2️⃣ Género")
-    st.caption("Nos ayuda a personalizar el enfoque muscular de tu rutina.")
+    st.caption("Nos ayuda a personalizar el enfoque muscular y la división de tu rutina.")
     genero = st.radio(
         "Género:",
         options=["Hombre", "Mujer", "Prefiero no decirlo"],
@@ -295,7 +281,8 @@ elif st.session_state.auth_user_id and not st.session_state.perfil:
     ])
     nivel_num = 1 if "Principiante" in nivel_texto else (2 if "Intermedio" in nivel_texto else 3)
     if nivel_num == 3:
-        st.success("💡 Como usuario avanzado, tu rutina incluirá técnicas avanzadas.")
+        st.success("💡 Como usuario avanzado, tu rutina incluirá técnicas avanzadas "
+                   "como Drop Sets y Rest-Pause.")
     st.divider()
 
     st.header("4️⃣ Tu objetivo")
@@ -308,15 +295,18 @@ elif st.session_state.auth_user_id and not st.session_state.perfil:
     st.divider()
 
     st.header("5️⃣ ¿En qué músculos quieres enfocarte más?")
-    st.caption("Recibirán el doble de ejercicios en tu rutina.")
+    st.caption("Recibirán más ejercicios en tu rutina. Puedes elegir varios o ninguno.")
     opciones_musculos = {
-        "🍑 Glúteos":  "gluteos",
-        "🦵 Piernas":  "piernas",
-        "🫁 Pecho":    "pecho",
-        "🔙 Espalda":  "espalda",
-        "🥥 Hombros":  "hombros",
-        "💪 Bíceps":   "biceps",
-        "🔱 Tríceps":  "triceps",
+        "🍑 Glúteos":           "gluteos",
+        "🦵 Piernas":           "piernas",
+        "🫁 Pecho":             "pecho",
+        "🔙 Espalda":           "espalda",
+        "🥥 Hombros":           "hombros",
+        "💪 Bíceps":            "biceps",
+        "🔱 Tríceps":           "triceps",
+        "🎯 Deltoides medio":   "deltoides_medio",
+        "🦵 Cuádriceps":        "cuadriceps",
+        "🔻 Femoral":           "femoral",
     }
     musculos_seleccionados = st.multiselect(
         "Selecciona tus músculos prioritarios (opcional):",
@@ -327,13 +317,41 @@ elif st.session_state.auth_user_id and not st.session_state.perfil:
     st.divider()
 
     st.header("6️⃣ Disponibilidad")
-    dias = st.select_slider("Días/semana", options=[2,3,4,5,6], value=3)
-    if dias <= 3:
-        st.info("💡 Haremos Fullbody.")
+    dias = st.select_slider("Días/semana", options=[1,2,3,4,5,6], value=3)
+
+    # Info dinámica según género, objetivo y días
+    objetivo_lower = objetivo.lower()
+    if dias == 1:
+        st.info("💡 Haremos un Full Body completo — ideal si solo puedes entrenar un día.")
+    elif dias == 2:
+        st.info("💡 Haremos Tren Superior / Tren Inferior.")
+    elif dias == 3:
+        if genero == "Mujer" or "grasa" in objetivo_lower:
+            st.info("💡 Haremos Superior + Inferior + Full Body.")
+        else:
+            st.info("💡 Haremos Empuje / Tirón / Pierna.")
     elif dias == 4:
-        st.info("💡 Haremos Torso/Pierna.")
+        if genero == "Mujer" and "músculo" in objetivo_lower:
+            st.info("💡 Haremos Cuád+Glút / Superior Espalda / Femoral+Glút / Superior Hombro.")
+        elif "grasa" in objetivo_lower:
+            st.info("💡 Haremos 2 días de Tren Superior + 2 días de Tren Inferior (variados).")
+        else:
+            st.info("💡 Haremos Empuje / Tirón / Pierna / Hombro y Brazo.")
+    elif dias == 5:
+        if genero == "Mujer" and "músculo" in objetivo_lower:
+            st.info("💡 Haremos rutina especializada en tren inferior + tren superior alternado.")
+        elif "grasa" in objetivo_lower:
+            st.info("💡 Haremos 2 Superior + 2 Inferior + 1 Full Body.")
+        else:
+            st.info("💡 Haremos Empuje 1 / Tirón 1 / Pierna / Empuje 2 / Tirón 2.")
     else:
-        st.info("💡 Haremos Push/Pull/Legs.")
+        if genero == "Mujer" and "músculo" in objetivo_lower:
+            st.info("💡 Haremos rutina completa de 6 días especializada en tren inferior.")
+        elif "grasa" in objetivo_lower:
+            st.info("💡 Haremos Superior + Inferior + Full Body × 2.")
+        else:
+            st.info("💡 Haremos Empuje 1 / Tirón 1 / Pierna 1 / Empuje 2 / Tirón 2 / Pierna 2.")
+
     minutos = st.selectbox("Tiempo por sesión", options=[30,45,60,90],
                             index=2, format_func=lambda x: f"{x} minutos")
     st.divider()
@@ -359,11 +377,18 @@ elif st.session_state.auth_user_id and not st.session_state.perfil:
                   use_container_width=True,
                   type="primary"):
         perfil = {
-            "nombre": nombre, "edad": edad, "peso": peso,
-            "genero": genero, "nivel_texto": nivel_texto, "nivel_num": nivel_num,
-            "objetivo": objetivo, "musculos_prioritarios": musculos_prioritarios,
-            "dias": dias, "minutos": minutos,
-            "equipamiento": equipamiento, "lesiones": lesiones_texto
+            "nombre":                nombre,
+            "edad":                  edad,
+            "peso":                  peso,
+            "genero":                genero,
+            "nivel_texto":           nivel_texto,
+            "nivel_num":             nivel_num,
+            "objetivo":              objetivo,
+            "musculos_prioritarios": musculos_prioritarios,
+            "dias":                  dias,
+            "minutos":               minutos,
+            "equipamiento":          equipamiento,
+            "lesiones":              lesiones_texto
         }
         with st.spinner("Generando tu rutina personalizada..."):
             usuario_id = guardar_perfil(st.session_state.auth_user_id, perfil)
@@ -414,12 +439,12 @@ else:
                     del st.session_state[key]
                 st.rerun()
 
-        # Mostrar notificación de subida de nivel si existe
-        subidas_nivel = st.session_state.get("subidas_nivel", [])
-        for subida in subidas_nivel:
+        # Notificaciones de subida de nivel
+        for subida in st.session_state.get("subidas_nivel", []):
             st.success(
                 f"⬆️ ¡Subiste de nivel en **{subida['ejercicio']}**! "
-                f"Ahora eres **{subida['nivel_nuevo']}** (Top {100 - subida['percentil']}% mundial)"
+                f"Ahora eres **{subida['nivel_nuevo']}** "
+                f"(Top {100 - subida['percentil']}% mundial)"
             )
         st.session_state.subidas_nivel = []
 
@@ -441,15 +466,26 @@ else:
         if info_semana["semana_en_bloque"] == 7:
             st.info("⚠️ La próxima semana es tu semana de deload. ¡Aprieta fuerte esta semana!")
 
-        progreso_bloque = info_semana["semana_en_bloque"] / 8
-        st.progress(progreso_bloque,
-                    text=f"Progreso del bloque: semana {info_semana['semana_en_bloque']}/8")
+        st.progress(
+            info_semana["semana_en_bloque"] / 8,
+            text=f"Progreso del bloque: semana {info_semana['semana_en_bloque']}/8"
+        )
         st.divider()
 
         nombres_estructura = {
-            "fullbody":       "Fullbody",
-            "torso_pierna":   "Torso / Pierna",
-            "push_pull_legs": "Push / Pull / Legs"
+            "fullbody_1dia":          "Full Body",
+            "superior_inferior":      "Superior / Inferior",
+            "superior_inferior_fullbody": "Superior + Inferior + Full Body",
+            "empuje_tiron_pierna":    "Empuje / Tirón / Pierna",
+            "4dias_chica_masa":       "4 Días — Especialización Femenina",
+            "4dias_grasa":            "4 Días — Pérdida de Grasa",
+            "4dias_chico_masa":       "Empuje / Tirón / Pierna / Hombro+Brazo",
+            "5dias_chica_masa":       "5 Días — Especialización Femenina",
+            "5dias_grasa":            "5 Días — Pérdida de Grasa",
+            "5dias_chico_masa":       "Empuje × 2 / Tirón × 2 / Pierna",
+            "6dias_chica_masa":       "6 Días — Especialización Femenina",
+            "6dias_grasa":            "6 Días — Pérdida de Grasa",
+            "6dias_chico_masa":       "Empuje × 2 / Tirón × 2 / Pierna × 2",
         }
         nombre_estructura = nombres_estructura.get(rutina["estructura"], rutina["estructura"])
 
@@ -457,7 +493,7 @@ else:
         col1.metric("Series HOY",   f"{fase_actual['series']} series")
         col2.metric("Repeticiones", f"{rutina['reps_min']}–{rutina['reps_max']} reps")
         col3.metric("RPE objetivo", f"{fase_actual['rpe_objetivo']}/10")
-        st.markdown(f"**Tipo de rutina:** {nombre_estructura}")
+        st.markdown(f"**División:** {nombre_estructura}")
 
         prioritarios = perfil.get("musculos_prioritarios", [])
         if prioritarios:
@@ -513,7 +549,7 @@ else:
                             st.markdown(f"### {i}")
                         with col_info:
                             st.markdown(f"**{ejercicio['nombre']}**")
-                            st.caption(f"Grupo: {ejercicio['grupo'].capitalize()}")
+                            st.caption(f"Grupo: {ejercicio['grupo'].replace('_', ' ').capitalize()}")
                             if ejercicio.get("tecnica"):
                                 st.caption(f"⚡ {ejercicio['tecnica']['nombre']}: {ejercicio['tecnica']['descripcion']}")
                         with col_peso:
@@ -536,9 +572,9 @@ else:
 
         with st.expander("❓ ¿Qué es el RPE?"):
             st.write("""
-            - 🟢 **1–4:** Esfuerzo bajo
-            - 🟠 **5–7:** Esfuerzo medio
-            - 🔴 **8–10:** Esfuerzo alto
+            - 🟢 **1–4:** Esfuerzo bajo — podrías hacer muchas más repeticiones
+            - 🟠 **5–7:** Esfuerzo medio — te quedan 2–4 repeticiones en el tanque
+            - 🔴 **8–10:** Esfuerzo alto — estás cerca del límite
             """)
 
         st.divider()
@@ -607,10 +643,10 @@ else:
                     )
                     st.session_state.feedback_ia = feedback
 
-                    # ── Calcular niveles para ejercicios favoritos ──
-                    favoritos       = st.session_state.get("favoritos", [])
-                    niveles_nuevos  = []
-                    subidas_nivel   = []
+                    # Calcular niveles para ejercicios favoritos
+                    favoritos      = st.session_state.get("favoritos", [])
+                    niveles_nuevos = []
+                    subidas_nivel  = []
 
                     for resultado in resultados:
                         nombre_ej = resultado["ejercicio"]
@@ -624,13 +660,11 @@ else:
                             )
                             if nivel_nuevo:
                                 niveles_nuevos.append({
-                                    "ejercicio":  nombre_ej,
-                                    "nivel":      nivel_nuevo["nivel"],
-                                    "nivel_idx":  nivel_nuevo["nivel_idx"],
-                                    "percentil":  nivel_nuevo["percentil"]
+                                    "ejercicio": nombre_ej,
+                                    "nivel":     nivel_nuevo["nivel"],
+                                    "nivel_idx": nivel_nuevo["nivel_idx"],
+                                    "percentil": nivel_nuevo["percentil"]
                                 })
-
-                                # Comprobar si subió de nivel respecto a la última vez
                                 nivel_anterior = obtener_ultimo_nivel(
                                     st.session_state.usuario_id, nombre_ej
                                 )
@@ -707,7 +741,7 @@ else:
             st.rerun()
 
     # --------------------------------------------------
-    # PANTALLA: RANKING GLOBAL ← NUEVA
+    # PANTALLA: RANKING GLOBAL
     # --------------------------------------------------
     elif st.session_state.pantalla == "ranking":
 
@@ -720,7 +754,6 @@ else:
 
         st.divider()
 
-        # ── Gestión de favoritos ──
         st.subheader("⭐ Mis ejercicios favoritos")
         st.caption("Selecciona los ejercicios que quieres seguir en el ranking.")
 
@@ -743,16 +776,11 @@ else:
         if not favoritos_nuevos:
             st.info("Selecciona al menos un ejercicio favorito para ver tu ranking.")
         else:
-            # ── Mostrar ranking por ejercicio ──
             st.subheader("📊 Tu posición actual")
-
-            # Obtener los últimos pesos usados para cada ejercicio favorito
             progreso = obtener_progreso_por_ejercicio(st.session_state.usuario_id)
 
             for ejercicio_fav in favoritos_nuevos:
                 st.markdown(f"#### 🏋️ {ejercicio_fav}")
-
-                # Obtener el último dato de este ejercicio
                 datos_ejercicio = progreso.get(ejercicio_fav, [])
 
                 if not datos_ejercicio:
@@ -760,9 +788,9 @@ else:
                     st.divider()
                     continue
 
-                ultimo_dato  = datos_ejercicio[-1]
-                peso_usado   = ultimo_dato["peso_usado"]
-                reps_usadas  = rutina["reps_max"]
+                ultimo_dato = datos_ejercicio[-1]
+                peso_usado  = ultimo_dato["peso_usado"]
+                reps_usadas = rutina["reps_max"]
 
                 nivel_resultado = calcular_nivel_fuerza(
                     ejercicio_fav,
