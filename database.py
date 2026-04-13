@@ -201,6 +201,75 @@ def obtener_historial_sesiones(usuario_id, limite=10):
     return sesiones
 
 
+def obtener_sesiones_mes(usuario_id, anio, mes):
+    """
+    Obtiene todas las sesiones de un mes concreto.
+
+    anio → año (ej: 2026)
+    mes  → mes en número (ej: 4 para abril)
+
+    Devuelve un diccionario donde la clave es la fecha (string "YYYY-MM-DD")
+    y el valor es una lista de sesiones de ese día.
+
+    Ejemplo:
+    {
+        "2026-04-10": [
+            {"dia": "Lunes", "enfoque": "Empuje", "resultados": [...]}
+        ],
+        "2026-04-14": [...]
+    }
+    """
+    import calendar
+
+    supabase = get_supabase_client()
+
+    # Calcular primer y último día del mes
+    ultimo_dia   = calendar.monthrange(anio, mes)[1]
+    fecha_inicio = f"{anio}-{mes:02d}-01"
+    fecha_fin    = f"{anio}-{mes:02d}-{ultimo_dia}"
+
+    respuesta = (
+        supabase.table("sesiones")
+        .select("*")
+        .eq("usuario_id", usuario_id)
+        .gte("created_at", fecha_inicio)
+        .lte("created_at", fecha_fin + "T23:59:59")
+        .order("created_at", desc=False)
+        .execute()
+    )
+
+    sesiones_por_dia = {}
+    for fila in respuesta.data:
+        fecha = fila["created_at"][:10]
+        if fecha not in sesiones_por_dia:
+            sesiones_por_dia[fecha] = []
+        sesiones_por_dia[fecha].append({
+            "dia":        fila["dia_nombre"],
+            "resultados": json.loads(fila["resultados_json"])
+        })
+
+    return sesiones_por_dia
+
+
+def obtener_todas_sesiones(usuario_id):
+    """
+    Obtiene TODAS las sesiones del usuario para calcular
+    rachas y estadísticas globales.
+    Devuelve lista de fechas únicas ordenadas.
+    """
+    supabase  = get_supabase_client()
+    respuesta = (
+        supabase.table("sesiones")
+        .select("created_at, dia_nombre")
+        .eq("usuario_id", usuario_id)
+        .order("created_at", desc=False)
+        .execute()
+    )
+
+    fechas = sorted(set(fila["created_at"][:10] for fila in respuesta.data))
+    return fechas
+
+
 def obtener_progreso_por_ejercicio(usuario_id):
     supabase  = get_supabase_client()
     respuesta = (
@@ -227,45 +296,27 @@ def obtener_progreso_por_ejercicio(usuario_id):
     return progreso
 
 
-# =====================================================
-# FUNCIONES DE EJERCICIOS FAVORITOS ← NUEVAS
-# =====================================================
-
 def guardar_favoritos(usuario_id, favoritos):
-    """
-    Guarda la lista de ejercicios favoritos del usuario.
-    favoritos → lista de nombres de ejercicios
-    """
-    supabase = get_supabase_client()
-
-    # Primero comprobamos si ya tiene favoritos guardados
+    supabase  = get_supabase_client()
     respuesta = (
         supabase.table("favoritos")
         .select("id")
         .eq("usuario_id", usuario_id)
         .execute()
     )
-
     datos = {
         "usuario_id":     usuario_id,
         "favoritos_json": json.dumps(favoritos, ensure_ascii=False)
     }
-
     if respuesta.data:
-        # Ya existe → actualizamos
         supabase.table("favoritos").update({
             "favoritos_json": json.dumps(favoritos, ensure_ascii=False)
         }).eq("usuario_id", usuario_id).execute()
     else:
-        # No existe → insertamos
         supabase.table("favoritos").insert(datos).execute()
 
 
 def obtener_favoritos(usuario_id):
-    """
-    Obtiene la lista de ejercicios favoritos del usuario.
-    Devuelve una lista de nombres o lista vacía si no tiene.
-    """
     supabase  = get_supabase_client()
     respuesta = (
         supabase.table("favoritos")
@@ -278,15 +329,7 @@ def obtener_favoritos(usuario_id):
     return []
 
 
-# =====================================================
-# FUNCIONES DE HISTORIAL DE NIVELES ← NUEVAS
-# =====================================================
-
 def guardar_niveles_sesion(usuario_id, niveles):
-    """
-    Guarda los niveles de fuerza calculados en una sesión.
-    niveles → lista de dicts con {ejercicio, nivel, nivel_idx, percentil}
-    """
     supabase = get_supabase_client()
     supabase.table("historial_niveles").insert({
         "usuario_id":   usuario_id,
@@ -295,10 +338,6 @@ def guardar_niveles_sesion(usuario_id, niveles):
 
 
 def obtener_ultimo_nivel(usuario_id, ejercicio):
-    """
-    Obtiene el último nivel registrado para un ejercicio específico.
-    Útil para detectar si el usuario subió de nivel en esta sesión.
-    """
     supabase  = get_supabase_client()
     respuesta = (
         supabase.table("historial_niveles")
@@ -308,12 +347,9 @@ def obtener_ultimo_nivel(usuario_id, ejercicio):
         .limit(10)
         .execute()
     )
-
-    # Buscar el nivel más reciente para este ejercicio
     for fila in respuesta.data:
         niveles = json.loads(fila["niveles_json"])
         for n in niveles:
             if n["ejercicio"] == ejercicio:
                 return n
-
     return None
