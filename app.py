@@ -2,7 +2,7 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
-from generador_rutinas import generar_rutina
+from generador_rutinas import generar_rutina, EJERCICIOS
 from algoritmo_ia import analizar_sesion_completa
 from ia_feedback import generar_feedback_sesion
 from strength_standards import (
@@ -126,6 +126,35 @@ def mostrar_nivel_fuerza(resultado_nivel):
         )
     else:
         st.success("🏆 ¡Has alcanzado el nivel Elite!")
+
+
+# =====================================================
+# FUNCIÓN: OBTENER EJERCICIOS SIMILARES
+# =====================================================
+def obtener_ejercicios_similares(grupo, nombre_actual, nivel):
+    """
+    Devuelve una lista de ejercicios del mismo grupo muscular
+    que no sea el ejercicio actual, filtrados por nivel.
+    """
+    disponibles = [
+        e["nombre"] for e in EJERCICIOS.get(grupo, [])
+        if e["nombre"] != nombre_actual and e["nivel_min"] <= nivel
+    ]
+    return disponibles
+
+
+def calcular_peso_para_ejercicio(grupo, nombre_ejercicio, peso_usuario):
+    """
+    Calcula el peso inicial para un ejercicio específico.
+    """
+    from generador_rutinas import calcular_peso_inicial
+    ejercicio = next(
+        (e for e in EJERCICIOS.get(grupo, []) if e["nombre"] == nombre_ejercicio),
+        None
+    )
+    if ejercicio:
+        return calcular_peso_inicial(peso_usuario, ejercicio["peso_inicial_pct"])
+    return None
 
 
 # =====================================================
@@ -319,10 +348,9 @@ elif st.session_state.auth_user_id and not st.session_state.perfil:
     st.header("6️⃣ Disponibilidad")
     dias = st.select_slider("Días/semana", options=[1,2,3,4,5,6], value=3)
 
-    # Info dinámica según género, objetivo y días
     objetivo_lower = objetivo.lower()
     if dias == 1:
-        st.info("💡 Haremos un Full Body completo — ideal si solo puedes entrenar un día.")
+        st.info("💡 Haremos un Full Body completo.")
     elif dias == 2:
         st.info("💡 Haremos Tren Superior / Tren Inferior.")
     elif dias == 3:
@@ -334,23 +362,23 @@ elif st.session_state.auth_user_id and not st.session_state.perfil:
         if genero == "Mujer" and "músculo" in objetivo_lower:
             st.info("💡 Haremos Cuád+Glút / Superior Espalda / Femoral+Glút / Superior Hombro.")
         elif "grasa" in objetivo_lower:
-            st.info("💡 Haremos 2 días de Tren Superior + 2 días de Tren Inferior (variados).")
+            st.info("💡 Haremos 2 días de Tren Superior + 2 días de Tren Inferior.")
         else:
             st.info("💡 Haremos Empuje / Tirón / Pierna / Hombro y Brazo.")
     elif dias == 5:
         if genero == "Mujer" and "músculo" in objetivo_lower:
-            st.info("💡 Haremos rutina especializada en tren inferior + tren superior alternado.")
+            st.info("💡 Haremos rutina especializada en tren inferior + tren superior.")
         elif "grasa" in objetivo_lower:
             st.info("💡 Haremos 2 Superior + 2 Inferior + 1 Full Body.")
         else:
             st.info("💡 Haremos Empuje 1 / Tirón 1 / Pierna / Empuje 2 / Tirón 2.")
     else:
         if genero == "Mujer" and "músculo" in objetivo_lower:
-            st.info("💡 Haremos rutina completa de 6 días especializada en tren inferior.")
+            st.info("💡 Haremos rutina completa de 6 días especializada.")
         elif "grasa" in objetivo_lower:
             st.info("💡 Haremos Superior + Inferior + Full Body × 2.")
         else:
-            st.info("💡 Haremos Empuje 1 / Tirón 1 / Pierna 1 / Empuje 2 / Tirón 2 / Pierna 2.")
+            st.info("💡 Haremos Empuje / Tirón / Pierna × 2.")
 
     minutos = st.selectbox("Tiempo por sesión", options=[30,45,60,90],
                             index=2, format_func=lambda x: f"{x} minutos")
@@ -473,19 +501,19 @@ else:
         st.divider()
 
         nombres_estructura = {
-            "fullbody_1dia":          "Full Body",
-            "superior_inferior":      "Superior / Inferior",
+            "fullbody_1dia":              "Full Body",
+            "superior_inferior":          "Superior / Inferior",
             "superior_inferior_fullbody": "Superior + Inferior + Full Body",
-            "empuje_tiron_pierna":    "Empuje / Tirón / Pierna",
-            "4dias_chica_masa":       "4 Días — Especialización Femenina",
-            "4dias_grasa":            "4 Días — Pérdida de Grasa",
-            "4dias_chico_masa":       "Empuje / Tirón / Pierna / Hombro+Brazo",
-            "5dias_chica_masa":       "5 Días — Especialización Femenina",
-            "5dias_grasa":            "5 Días — Pérdida de Grasa",
-            "5dias_chico_masa":       "Empuje × 2 / Tirón × 2 / Pierna",
-            "6dias_chica_masa":       "6 Días — Especialización Femenina",
-            "6dias_grasa":            "6 Días — Pérdida de Grasa",
-            "6dias_chico_masa":       "Empuje × 2 / Tirón × 2 / Pierna × 2",
+            "empuje_tiron_pierna":        "Empuje / Tirón / Pierna",
+            "4dias_chica_masa":           "4 Días — Especialización Femenina",
+            "4dias_grasa":                "4 Días — Pérdida de Grasa",
+            "4dias_chico_masa":           "Empuje / Tirón / Pierna / Hombro+Brazo",
+            "5dias_chica_masa":           "5 Días — Especialización Femenina",
+            "5dias_grasa":                "5 Días — Pérdida de Grasa",
+            "5dias_chico_masa":           "Empuje × 2 / Tirón × 2 / Pierna",
+            "6dias_chica_masa":           "6 Días — Especialización Femenina",
+            "6dias_grasa":                "6 Días — Pérdida de Grasa",
+            "6dias_chico_masa":           "Empuje × 2 / Tirón × 2 / Pierna × 2",
         }
         nombre_estructura = nombres_estructura.get(rutina["estructura"], rutina["estructura"])
 
@@ -538,23 +566,124 @@ else:
                         st.write(f"{emoji} **{resultado['ejercicio']}** → {resultado['nuevo_peso']} kg")
 
         st.divider()
+
+        # ── Rutina completa con opción de cambiar ejercicios ──
         st.subheader("📅 Tu rutina completa")
-        for dia in rutina_hoy["dias"]:
+        nivel_usuario = perfil.get("nivel_num", 1)
+
+        # Inicializar dict de cambios pendientes en session_state
+        if "cambios_ejercicios" not in st.session_state:
+            st.session_state.cambios_ejercicios = {}
+
+        rutina_modificada = False
+
+        for idx_dia, dia in enumerate(rutina_hoy["dias"]):
             with st.expander(f"📅 {dia['dia']} — {dia['enfoque']}"):
-                for i, ejercicio in enumerate(dia["ejercicios"], 1):
+                for idx_ej, ejercicio in enumerate(dia["ejercicios"]):
                     peso_texto = f"{ejercicio['peso_sugerido']} kg" if ejercicio["peso_sugerido"] else "Peso corporal"
+                    grupo      = ejercicio["grupo"]
+                    nombre_ej  = ejercicio["nombre"]
+
+                    # Clave única para este ejercicio en session_state
+                    cambio_key    = f"cambio_{idx_dia}_{idx_ej}"
+                    selector_key  = f"selector_{idx_dia}_{idx_ej}"
+
                     with st.container(border=True):
-                        col_num, col_info, col_peso = st.columns([0.5, 3, 2])
+                        col_num, col_info, col_peso, col_btn = st.columns([0.4, 2.5, 1.5, 1.2])
+
                         with col_num:
-                            st.markdown(f"### {i}")
+                            st.markdown(f"### {idx_ej + 1}")
+
                         with col_info:
-                            st.markdown(f"**{ejercicio['nombre']}**")
-                            st.caption(f"Grupo: {ejercicio['grupo'].replace('_', ' ').capitalize()}")
+                            st.markdown(f"**{nombre_ej}**")
+                            st.caption(f"Grupo: {grupo.replace('_', ' ').capitalize()}")
                             if ejercicio.get("tecnica"):
                                 st.caption(f"⚡ {ejercicio['tecnica']['nombre']}: {ejercicio['tecnica']['descripcion']}")
+
                         with col_peso:
                             st.markdown(f"**{ejercicio['series']} × {ejercicio['reps_min']}–{ejercicio['reps_max']} reps**")
                             st.markdown(f"📦 {peso_texto}")
+
+                        with col_btn:
+                            # Botón para abrir/cerrar el selector de cambio
+                            abierto = st.session_state.cambios_ejercicios.get(cambio_key, False)
+                            etiqueta_btn = "✕ Cerrar" if abierto else "🔄 Cambiar"
+                            if st.button(etiqueta_btn, key=f"btn_{cambio_key}",
+                                          use_container_width=True):
+                                st.session_state.cambios_ejercicios[cambio_key] = not abierto
+                                st.rerun()
+
+                    # Selector desplegable — aparece solo si el botón está activo
+                    if st.session_state.cambios_ejercicios.get(cambio_key, False):
+                        similares = obtener_ejercicios_similares(grupo, nombre_ej, nivel_usuario)
+
+                        if not similares:
+                            st.warning("No hay más ejercicios disponibles para este grupo muscular y tu nivel.")
+                        else:
+                            with st.container(border=True):
+                                st.caption(f"🔄 Elige un ejercicio alternativo de **{grupo.replace('_', ' ').capitalize()}**:")
+                                ejercicio_nuevo = st.selectbox(
+                                    "Ejercicio alternativo:",
+                                    options=similares,
+                                    key=selector_key,
+                                    label_visibility="collapsed"
+                                )
+
+                                col_conf, col_cancel = st.columns(2)
+                                with col_conf:
+                                    if st.button("✅ Confirmar cambio",
+                                                  key=f"confirm_{cambio_key}",
+                                                  use_container_width=True,
+                                                  type="primary"):
+                                        # Aplicar el cambio en la rutina
+                                        nuevo_peso = calcular_peso_para_ejercicio(
+                                            grupo, ejercicio_nuevo, perfil["peso"]
+                                        )
+
+                                        # Modificar en la rutina guardada en session_state
+                                        rutina_actualizada = st.session_state.rutina
+                                        rutina_actualizada["dias"][idx_dia]["ejercicios"][idx_ej]["nombre"]         = ejercicio_nuevo
+                                        rutina_actualizada["dias"][idx_dia]["ejercicios"][idx_ej]["peso_sugerido"]  = nuevo_peso
+                                        rutina_actualizada["dias"][idx_dia]["ejercicios"][idx_ej]["tecnica"]        = None
+                                        st.session_state.rutina = rutina_actualizada
+
+                                        # Guardar en Supabase
+                                        actualizar_pesos_rutina(
+                                            st.session_state.usuario_id,
+                                            [{
+                                                "ejercicio":  ejercicio_nuevo,
+                                                "nuevo_peso": nuevo_peso or 0
+                                            }]
+                                        )
+
+                                        # Guardar rutina completa actualizada
+                                        from database import get_supabase_client
+                                        import json
+                                        supa = get_supabase_client()
+                                        resp = (
+                                            supa.table("rutinas")
+                                            .select("id")
+                                            .eq("usuario_id", st.session_state.usuario_id)
+                                            .order("created_at", desc=True)
+                                            .limit(1)
+                                            .execute()
+                                        )
+                                        if resp.data:
+                                            supa.table("rutinas").update({
+                                                "rutina_json": json.dumps(rutina_actualizada, ensure_ascii=False)
+                                            }).eq("id", resp.data[0]["id"]).execute()
+
+                                        # Cerrar el selector
+                                        st.session_state.cambios_ejercicios[cambio_key] = False
+                                        st.success(f"✅ Ejercicio cambiado a **{ejercicio_nuevo}**")
+                                        st.rerun()
+
+                                with col_cancel:
+                                    if st.button("✕ Cancelar",
+                                                  key=f"cancel_{cambio_key}",
+                                                  use_container_width=True):
+                                        st.session_state.cambios_ejercicios[cambio_key] = False
+                                        st.rerun()
 
     # --------------------------------------------------
     # PANTALLA: SESIÓN ACTIVA
@@ -643,7 +772,6 @@ else:
                     )
                     st.session_state.feedback_ia = feedback
 
-                    # Calcular niveles para ejercicios favoritos
                     favoritos      = st.session_state.get("favoritos", [])
                     niveles_nuevos = []
                     subidas_nivel  = []
