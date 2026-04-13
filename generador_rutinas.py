@@ -5,11 +5,6 @@ import random
 # =====================================================
 # BASE DE DATOS DE EJERCICIOS
 # =====================================================
-# Estructura de cada ejercicio:
-#   nombre          → nombre del ejercicio
-#   nivel_min       → 1=principiante, 2=intermedio, 3=avanzado
-#   peso_inicial_pct→ fracción del peso corporal para el peso inicial
-#                     0.0 = peso corporal o sin peso externo
 
 EJERCICIOS = {
 
@@ -230,9 +225,8 @@ EJERCICIOS = {
     ],
 }
 
-# Alias para compatibilidad con código anterior
-EJERCICIOS["piernas"]  = EJERCICIOS["cuadriceps"]
-EJERCICIOS["hombro"]   = EJERCICIOS["hombros"]
+EJERCICIOS["piernas"] = EJERCICIOS["cuadriceps"]
+EJERCICIOS["hombro"]  = EJERCICIOS["hombros"]
 
 
 # =====================================================
@@ -269,11 +263,6 @@ def calcular_peso_inicial(peso_usuario, porcentaje):
 
 
 def _elegir_ejercicios(grupo, nivel, peso_usuario, cantidad, usados=None):
-    """
-    Selecciona 'cantidad' ejercicios del grupo indicado,
-    filtrando por nivel y evitando repetir los ya usados.
-    Rota aleatoriamente para dar variedad entre sesiones.
-    """
     if usados is None:
         usados = set()
 
@@ -282,7 +271,6 @@ def _elegir_ejercicios(grupo, nivel, peso_usuario, cantidad, usados=None):
         if e["nivel_min"] <= nivel and e["nombre"] not in usados
     ]
 
-    # Si no hay suficientes sin usar, permitir repetición
     if len(disponibles) < cantidad:
         disponibles = [e for e in EJERCICIOS.get(grupo, []) if e["nivel_min"] <= nivel]
 
@@ -302,12 +290,6 @@ def _elegir_ejercicios(grupo, nivel, peso_usuario, cantidad, usados=None):
 
 
 def _construir_dia(nombre_dia, enfoque, spec, nivel, peso_usuario, usados_global):
-    """
-    Construye un día de entrenamiento según la especificación.
-
-    spec → lista de tuplas (grupo, cantidad)
-           Ejemplo: [("pecho", 2), ("espalda", 2), ("deltoides_medio", 1)]
-    """
     ejercicios = []
     for grupo, cantidad in spec:
         nuevos, usados_global = _elegir_ejercicios(
@@ -323,30 +305,23 @@ def _construir_dia(nombre_dia, enfoque, spec, nivel, peso_usuario, usados_global
 
 
 def _aplicar_parametros(dias_rutina, series, reps_min, reps_max, nivel):
-    """Añade series, reps y técnicas avanzadas a cada ejercicio."""
     import random as _random
     tecnicas = list(TECNICAS_AVANZADAS.values())
 
     for dia in dias_rutina:
-        grupos_vistos = {}
+        grupos_contados = {}
+        for ejercicio in dia["ejercicios"]:
+            grupo = ejercicio["grupo"]
+            grupos_contados[grupo] = grupos_contados.get(grupo, 0) + 1
+
+        contador_actual = {}
         for ejercicio in dia["ejercicios"]:
             ejercicio["series"]   = series
             ejercicio["reps_min"] = reps_min
             ejercicio["reps_max"] = reps_max
             ejercicio["tecnica"]  = None
 
-            grupo = ejercicio["grupo"]
-            grupos_vistos[grupo] = grupos_vistos.get(grupo, 0) + 1
-
-        # Técnicas avanzadas: último ejercicio de cada grupo para nivel 3
-        if nivel == 3:
-            grupos_contados = {}
-            for ejercicio in dia["ejercicios"]:
-                grupo = ejercicio["grupo"]
-                grupos_contados[grupo] = grupos_contados.get(grupo, 0) + 1
-
-            contador_actual = {}
-            for ejercicio in dia["ejercicios"]:
+            if nivel == 3:
                 grupo = ejercicio["grupo"]
                 contador_actual[grupo] = contador_actual.get(grupo, 0) + 1
                 if contador_actual[grupo] == grupos_contados[grupo]:
@@ -354,18 +329,42 @@ def _aplicar_parametros(dias_rutina, series, reps_min, reps_max, nivel):
 
 
 # =====================================================
+# ESPECIFICACIONES DE DÍAS EMPUJE Y TIRÓN
+# =====================================================
+
+def _spec_empuje(prioritarios):
+    """
+    Día de empuje:
+    3 pecho + 3 deltoides_medio + 2 tríceps  ← CORREGIDO
+    Si tríceps está en prioritarios → 3 tríceps
+    """
+    tri = 3 if "triceps" in prioritarios else 2
+    return [
+        ("pecho",           3),
+        ("deltoides_medio", 3),  # ← corregido de 2 a 3
+        ("triceps",         tri),
+    ]
+
+
+def _spec_tiron(prioritarios):
+    """
+    Día de tirón:
+    3 espalda + 2 deltoides_posterior + 2 bíceps
+    Si bíceps está en prioritarios → 3 bíceps
+    """
+    bi = 3 if "biceps" in prioritarios else 2
+    return [
+        ("espalda",             3),
+        ("deltoides_posterior", 2),
+        ("biceps",              bi),
+    ]
+
+
+# =====================================================
 # FUNCIÓN PRINCIPAL
 # =====================================================
 
 def generar_rutina(perfil):
-    """
-    Genera una rutina completa personalizada según:
-    - Género (Hombre / Mujer / Prefiero no decirlo)
-    - Objetivo (músculo / grasa / fuerza / condición)
-    - Días disponibles (1–6)
-    - Nivel (1=principiante, 2=intermedio, 3=avanzado)
-    - Músculos prioritarios
-    """
 
     nivel        = perfil["nivel_num"]
     dias         = perfil["dias"]
@@ -374,9 +373,6 @@ def generar_rutina(perfil):
     genero       = perfil.get("genero", "Prefiero no decirlo")
     prioritarios = perfil.get("musculos_prioritarios", [])
 
-    # --------------------------------------------------
-    # Parámetros según objetivo
-    # --------------------------------------------------
     if "músculo" in objetivo or "hipertrofia" in objetivo:
         series = 4; reps_min = 8;  reps_max = 12; descanso = 90
     elif "grasa" in objetivo:
@@ -389,322 +385,212 @@ def generar_rutina(perfil):
     if nivel == 1:
         series = 3; reps_min = 10; reps_max = 12
 
-    # --------------------------------------------------
-    # Determinar si es perfil "chica" o "chico"
-    # Para "Prefiero no decirlo" usamos la lógica de chico
-    # salvo que tenga prioritarios de tren inferior
-    # --------------------------------------------------
     es_mujer = (genero == "Mujer")
     tiene_foco_inferior = any(g in prioritarios for g in ["gluteos", "piernas", "cuadriceps", "femoral"])
-
     if genero == "Prefiero no decirlo" and tiene_foco_inferior:
         es_mujer = True
 
-    # --------------------------------------------------
-    # Función interna para foco de glúteo:
-    # si glúteos está en prioritarios, pone más glúteo que cuádriceps
-    # --------------------------------------------------
     def spec_pierna_con_foco(base_gluteo, base_cuad, base_femoral, abs_count=1):
         if "gluteos" in prioritarios:
-            return [
-                ("gluteos",    base_gluteo + 1),
-                ("cuadriceps", max(base_cuad - 1, 1)),
-                ("femoral",    base_femoral),
-                ("abs",        abs_count)
-            ]
+            return [("gluteos", base_gluteo+1), ("cuadriceps", max(base_cuad-1,1)),
+                    ("femoral", base_femoral), ("abs", abs_count)]
         elif "cuadriceps" in prioritarios:
-            return [
-                ("gluteos",    max(base_gluteo - 1, 1)),
-                ("cuadriceps", base_cuad + 1),
-                ("femoral",    base_femoral),
-                ("abs",        abs_count)
-            ]
+            return [("gluteos", max(base_gluteo-1,1)), ("cuadriceps", base_cuad+1),
+                    ("femoral", base_femoral), ("abs", abs_count)]
         else:
-            return [
-                ("gluteos",    base_gluteo),
-                ("cuadriceps", base_cuad),
-                ("femoral",    base_femoral),
-                ("abs",        abs_count)
-            ]
+            return [("gluteos", base_gluteo), ("cuadriceps", base_cuad),
+                    ("femoral", base_femoral), ("abs", abs_count)]
 
-    def spec_brazo(tri_count=1, bi_count=1):
-        """Devuelve spec de brazo según prioritarios."""
+    def spec_brazo_simple(tri_count=1, bi_count=1):
         if "triceps" in prioritarios:
-            return [("triceps", tri_count + 1), ("biceps", bi_count)]
+            return [("triceps", tri_count+1), ("biceps", bi_count)]
         elif "biceps" in prioritarios:
-            return [("triceps", tri_count), ("biceps", bi_count + 1)]
+            return [("triceps", tri_count), ("biceps", bi_count+1)]
         else:
             return [("triceps", tri_count), ("biceps", bi_count)]
 
-    # --------------------------------------------------
-    # Usados globales para rotar ejercicios
-    # --------------------------------------------------
     usados = set()
     dias_rutina = []
 
-    # ══════════════════════════════════════════════════
-    # 1 DÍA — FULLBODY (igual para todos)
-    # ══════════════════════════════════════════════════
+    # ── 1 DÍA ──
     if dias == 1:
         estructura = "fullbody_1dia"
-        spec = [
-            ("pecho", 1), ("espalda", 1), ("deltoides_medio", 1),
-            ("gluteos", 1), ("cuadriceps", 1), ("femoral", 1),
-            ("abs", 1), ("biceps", 1), ("triceps", 1)
-        ]
-        dia, usados = _construir_dia("Día 1", "Full Body", spec, nivel, peso, usados)
+        spec = [("pecho",1),("espalda",1),("deltoides_medio",1),
+                ("gluteos",1),("cuadriceps",1),("femoral",1),
+                ("abs",1),("biceps",1),("triceps",1)]
+        dia, usados = _construir_dia("Día 1","Full Body",spec,nivel,peso,usados)
         dias_rutina.append(dia)
 
-    # ══════════════════════════════════════════════════
-    # 2 DÍAS — Tren Superior / Tren Inferior
-    # ══════════════════════════════════════════════════
+    # ── 2 DÍAS ──
     elif dias == 2:
         estructura = "superior_inferior"
-
-        spec_sup = [
-            ("pecho", 2), ("espalda", 2), ("deltoides_medio", 1),
-            *spec_brazo(1, 1)
-        ]
-        spec_inf = spec_pierna_con_foco(2, 2, 2, 1)
-
-        dia1, usados = _construir_dia("Lunes",   "Tren Superior", spec_sup, nivel, peso, usados)
-        dia2, usados = _construir_dia("Jueves",  "Tren Inferior", spec_inf, nivel, peso, usados)
+        spec_sup = [("pecho",2),("espalda",2),("deltoides_medio",1),*spec_brazo_simple(1,1)]
+        spec_inf = spec_pierna_con_foco(2,2,2,1)
+        dia1, usados = _construir_dia("Lunes",  "Tren Superior",spec_sup,nivel,peso,usados)
+        dia2, usados = _construir_dia("Jueves", "Tren Inferior",spec_inf,nivel,peso,usados)
         dias_rutina = [dia1, dia2]
 
-    # ══════════════════════════════════════════════════
-    # 3 DÍAS
-    # ══════════════════════════════════════════════════
+    # ── 3 DÍAS ──
     elif dias == 3:
         if es_mujer or "grasa" in objetivo:
-            # Chica o pérdida de grasa:
-            # Día 1 Superior, Día 2 Inferior, Día 3 Fullbody
             estructura = "superior_inferior_fullbody"
-
-            spec_sup = [
-                ("pecho", 2), ("espalda", 2), ("deltoides_medio", 1),
-                *spec_brazo(1, 1)
-            ]
-            spec_inf = spec_pierna_con_foco(2, 2, 2, 1)
-            spec_fb  = [
-                ("pecho", 1), ("espalda", 1), ("deltoides_medio", 1),
-                ("gluteos", 1), ("cuadriceps", 1), ("femoral", 1),
-                ("abs", 1), ("biceps", 1), ("triceps", 1)
-            ]
-
-            usados2 = set()
-            dia1, usados  = _construir_dia("Lunes",    "Tren Superior",  spec_sup, nivel, peso, usados)
-            dia2, usados  = _construir_dia("Miércoles","Tren Inferior",  spec_inf, nivel, peso, usados)
-            dia3, usados2 = _construir_dia("Viernes",  "Full Body",      spec_fb,  nivel, peso, usados2)
+            spec_sup = [("pecho",2),("espalda",2),("deltoides_medio",1),*spec_brazo_simple(1,1)]
+            spec_inf = spec_pierna_con_foco(2,2,2,1)
+            spec_fb  = [("pecho",1),("espalda",1),("deltoides_medio",1),
+                        ("gluteos",1),("cuadriceps",1),("femoral",1),
+                        ("abs",1),("biceps",1),("triceps",1)]
+            usados2  = set()
+            dia1, usados  = _construir_dia("Lunes",    "Tren Superior",spec_sup,nivel,peso,usados)
+            dia2, usados  = _construir_dia("Miércoles","Tren Inferior",spec_inf,nivel,peso,usados)
+            dia3, usados2 = _construir_dia("Viernes",  "Full Body",    spec_fb, nivel,peso,usados2)
             dias_rutina = [dia1, dia2, dia3]
-
         else:
-            # Chico o ganancia muscular:
-            # Empuje / Tirón / Pierna
             estructura = "empuje_tiron_pierna"
-
-            spec_emp = [("pecho", 3), ("deltoides_medio", 2), *spec_brazo(2, 0)]
-            spec_tir = [("espalda", 3), ("deltoides_posterior", 2), *spec_brazo(0, 2)]
-            spec_pie = spec_pierna_con_foco(2, 2, 1, 1)
-
-            dia1, usados = _construir_dia("Lunes",    "Empuje (Pecho, Hombro, Tríceps)", spec_emp, nivel, peso, usados)
-            dia2, usados = _construir_dia("Miércoles","Tirón (Espalda, Bíceps)",          spec_tir, nivel, peso, usados)
-            dia3, usados = _construir_dia("Viernes",  "Pierna",                           spec_pie, nivel, peso, usados)
+            spec_emp = _spec_empuje(prioritarios)
+            spec_tir = _spec_tiron(prioritarios)
+            spec_pie = spec_pierna_con_foco(2,2,1,1)
+            dia1, usados = _construir_dia("Lunes",    "Empuje (Pecho, Hombro, Tríceps)",spec_emp,nivel,peso,usados)
+            dia2, usados = _construir_dia("Miércoles","Tirón (Espalda, Bíceps)",         spec_tir,nivel,peso,usados)
+            dia3, usados = _construir_dia("Viernes",  "Pierna",                          spec_pie,nivel,peso,usados)
             dias_rutina = [dia1, dia2, dia3]
 
-    # ══════════════════════════════════════════════════
-    # 4 DÍAS
-    # ══════════════════════════════════════════════════
+    # ── 4 DÍAS ──
     elif dias == 4:
         if es_mujer and "músculo" in objetivo:
-            # Chica aumento masa:
-            # Cuád+Glút / Superior Espalda / Femoral+Glút / Superior Hombro
             estructura = "4dias_chica_masa"
-
-            spec_d1 = spec_pierna_con_foco(3, 2, 0, 1)
-            spec_d2 = [
-                ("espalda", 2), ("pecho", 1),
-                ("deltoides_posterior", 2), *spec_brazo(1, 0)
-            ]
-            spec_d3 = [
-                ("gluteos", 3 if "gluteos" in prioritarios else 2),
-                ("femoral",  2 if "gluteos" not in prioritarios else 2),
-                ("abs", 1)
-            ]
-            spec_d4 = [
-                ("hombros", 1), ("deltoides_medio", 2), ("deltoides_posterior", 1),
-                *spec_brazo(1, 1)
-            ]
-
+            spec_d1 = spec_pierna_con_foco(3,2,0,1)
+            spec_d2 = [("espalda",2),("pecho",1),("deltoides_posterior",2),*spec_brazo_simple(1,0)]
+            spec_d3 = [("gluteos",3 if "gluteos" in prioritarios else 2),("femoral",2),("abs",1)]
+            spec_d4 = [("hombros",1),("deltoides_medio",2),("deltoides_posterior",1),*spec_brazo_simple(1,1)]
             usados_b = set()
-            dia1, usados   = _construir_dia("Lunes",    "Cuádriceps y Glúteo",       spec_d1, nivel, peso, usados)
-            dia2, usados   = _construir_dia("Martes",   "Tren Superior — Espalda",   spec_d2, nivel, peso, usados)
-            dia3, usados_b = _construir_dia("Jueves",   "Femoral y Glúteo",          spec_d3, nivel, peso, usados_b)
-            dia4, usados_b = _construir_dia("Viernes",  "Tren Superior — Hombro",    spec_d4, nivel, peso, usados_b)
+            dia1, usados   = _construir_dia("Lunes",  "Cuádriceps y Glúteo",    spec_d1,nivel,peso,usados)
+            dia2, usados   = _construir_dia("Martes", "Tren Superior — Espalda",spec_d2,nivel,peso,usados)
+            dia3, usados_b = _construir_dia("Jueves", "Femoral y Glúteo",       spec_d3,nivel,peso,usados_b)
+            dia4, usados_b = _construir_dia("Viernes","Tren Superior — Hombro", spec_d4,nivel,peso,usados_b)
             dias_rutina = [dia1, dia2, dia3, dia4]
-
         elif "grasa" in objetivo:
-            # 4 días pérdida de grasa: 2 sup + 2 inf (variados)
             estructura = "4dias_grasa"
-
-            spec_sup1 = [("pecho", 2), ("espalda", 2), ("deltoides_medio", 1), *spec_brazo(1, 1)]
-            spec_inf1 = spec_pierna_con_foco(2, 2, 2, 1)
-            usados2 = set()
-            spec_sup2 = [("pecho", 2), ("espalda", 2), ("deltoides_medio", 1), *spec_brazo(1, 1)]
-            spec_inf2 = spec_pierna_con_foco(2, 2, 2, 1)
-
-            dia1, usados  = _construir_dia("Lunes",    "Tren Superior A",  spec_sup1, nivel, peso, usados)
-            dia2, usados  = _construir_dia("Martes",   "Tren Inferior A",  spec_inf1, nivel, peso, usados)
-            dia3, usados2 = _construir_dia("Jueves",   "Tren Superior B",  spec_sup2, nivel, peso, usados2)
-            dia4, usados2 = _construir_dia("Viernes",  "Tren Inferior B",  spec_inf2, nivel, peso, usados2)
+            spec_sup1 = [("pecho",2),("espalda",2),("deltoides_medio",1),*spec_brazo_simple(1,1)]
+            spec_inf1 = spec_pierna_con_foco(2,2,2,1)
+            usados2   = set()
+            spec_sup2 = [("pecho",2),("espalda",2),("deltoides_medio",1),*spec_brazo_simple(1,1)]
+            spec_inf2 = spec_pierna_con_foco(2,2,2,1)
+            dia1, usados  = _construir_dia("Lunes",  "Tren Superior A",spec_sup1,nivel,peso,usados)
+            dia2, usados  = _construir_dia("Martes", "Tren Inferior A",spec_inf1,nivel,peso,usados)
+            dia3, usados2 = _construir_dia("Jueves", "Tren Superior B",spec_sup2,nivel,peso,usados2)
+            dia4, usados2 = _construir_dia("Viernes","Tren Inferior B",spec_inf2,nivel,peso,usados2)
             dias_rutina = [dia1, dia2, dia3, dia4]
-
         else:
-            # Chico aumento masa: Empuje / Tirón / Pierna / Hombro+Brazo
             estructura = "4dias_chico_masa"
-
-            spec_emp = [("pecho", 3), ("deltoides_medio", 2), *spec_brazo(2, 0)]
-            spec_tir = [("espalda", 3), ("deltoides_posterior", 2), *spec_brazo(0, 2)]
-            spec_pie = spec_pierna_con_foco(2, 2, 1, 1)
-            spec_hom = [
-                ("hombros", 1), ("deltoides_medio", 2),
-                ("deltoides_posterior", 1), *spec_brazo(1, 1)
-            ]
-
-            dia1, usados = _construir_dia("Lunes",   "Empuje (Pecho, Hombro, Tríceps)",     spec_emp, nivel, peso, usados)
-            dia2, usados = _construir_dia("Martes",  "Tirón (Espalda, Bíceps)",              spec_tir, nivel, peso, usados)
-            dia3, usados = _construir_dia("Jueves",  "Pierna",                               spec_pie, nivel, peso, usados)
-            dia4, usados = _construir_dia("Viernes", "Hombro y Brazo",                       spec_hom, nivel, peso, usados)
+            spec_emp = _spec_empuje(prioritarios)
+            spec_tir = _spec_tiron(prioritarios)
+            spec_pie = spec_pierna_con_foco(2,2,1,1)
+            spec_hom = [("hombros",1),("deltoides_medio",2),("deltoides_posterior",1),*spec_brazo_simple(1,1)]
+            dia1, usados = _construir_dia("Lunes",  "Empuje (Pecho, Hombro, Tríceps)",   spec_emp,nivel,peso,usados)
+            dia2, usados = _construir_dia("Martes", "Tirón (Espalda, Bíceps)",            spec_tir,nivel,peso,usados)
+            dia3, usados = _construir_dia("Jueves", "Pierna",                             spec_pie,nivel,peso,usados)
+            dia4, usados = _construir_dia("Viernes","Hombro y Brazo",                     spec_hom,nivel,peso,usados)
             dias_rutina = [dia1, dia2, dia3, dia4]
 
-    # ══════════════════════════════════════════════════
-    # 5 DÍAS
-    # ══════════════════════════════════════════════════
+    # ── 5 DÍAS ──
     elif dias == 5:
         if es_mujer and "músculo" in objetivo:
-            # Chica masa: Cuád+Glút / Superior Esp / Fem+Glút / Superior Hom / Pierna entera
             estructura = "5dias_chica_masa"
-
-            spec_d1 = spec_pierna_con_foco(3, 2, 0, 1)
-            spec_d2 = [("espalda", 2), ("pecho", 1), ("deltoides_posterior", 2), *spec_brazo(1, 0)]
-            spec_d3 = [("gluteos", 3), ("femoral", 2), ("abs", 1)]
-            spec_d4 = [("hombros", 1), ("deltoides_medio", 2), ("deltoides_posterior", 1), *spec_brazo(1, 1)]
-            spec_d5 = [("cuadriceps", 2), ("femoral", 2), ("gluteos", 1), ("abs", 1)]
-
+            spec_d1 = spec_pierna_con_foco(3,2,0,1)
+            spec_d2 = [("espalda",2),("pecho",1),("deltoides_posterior",2),*spec_brazo_simple(1,0)]
+            spec_d3 = [("gluteos",3),("femoral",2),("abs",1)]
+            spec_d4 = [("hombros",1),("deltoides_medio",2),("deltoides_posterior",1),*spec_brazo_simple(1,1)]
+            spec_d5 = [("cuadriceps",2),("femoral",2),("gluteos",1),("abs",1)]
             usados_b = set()
-            dia1, usados   = _construir_dia("Lunes",    "Cuádriceps y Glúteo",     spec_d1, nivel, peso, usados)
-            dia2, usados   = _construir_dia("Martes",   "Superior — Espalda",      spec_d2, nivel, peso, usados)
-            dia3, usados_b = _construir_dia("Miércoles","Femoral y Glúteo",         spec_d3, nivel, peso, usados_b)
-            dia4, usados_b = _construir_dia("Jueves",   "Superior — Hombro",       spec_d4, nivel, peso, usados_b)
-            dia5, usados_b = _construir_dia("Viernes",  "Pierna Completa",         spec_d5, nivel, peso, usados_b)
+            dia1, usados   = _construir_dia("Lunes",    "Cuádriceps y Glúteo", spec_d1,nivel,peso,usados)
+            dia2, usados   = _construir_dia("Martes",   "Superior — Espalda",  spec_d2,nivel,peso,usados)
+            dia3, usados_b = _construir_dia("Miércoles","Femoral y Glúteo",     spec_d3,nivel,peso,usados_b)
+            dia4, usados_b = _construir_dia("Jueves",   "Superior — Hombro",   spec_d4,nivel,peso,usados_b)
+            dia5, usados_b = _construir_dia("Viernes",  "Pierna Completa",     spec_d5,nivel,peso,usados_b)
             dias_rutina = [dia1, dia2, dia3, dia4, dia5]
-
         elif "grasa" in objetivo:
-            # 5 días grasa: 2 sup + 2 inf + 1 fullbody
             estructura = "5dias_grasa"
-
-            spec_sup1 = [("pecho", 2), ("espalda", 2), ("deltoides_medio", 1), *spec_brazo(1, 1)]
-            spec_inf1 = spec_pierna_con_foco(2, 2, 2, 1)
+            spec_sup1 = [("pecho",2),("espalda",2),("deltoides_medio",1),*spec_brazo_simple(1,1)]
+            spec_inf1 = spec_pierna_con_foco(2,2,2,1)
             usados_b  = set()
-            spec_sup2 = [("pecho", 2), ("espalda", 2), ("deltoides_medio", 1), *spec_brazo(1, 1)]
-            spec_inf2 = spec_pierna_con_foco(2, 2, 2, 1)
-            spec_fb   = [
-                ("pecho", 1), ("espalda", 1), ("deltoides_medio", 1),
-                ("gluteos", 1), ("cuadriceps", 1), ("femoral", 1),
-                ("abs", 1), ("biceps", 1), ("triceps", 1)
-            ]
-
-            dia1, usados   = _construir_dia("Lunes",    "Tren Superior A",   spec_sup1, nivel, peso, usados)
-            dia2, usados   = _construir_dia("Martes",   "Tren Inferior A",   spec_inf1, nivel, peso, usados)
-            dia3, usados_b = _construir_dia("Miércoles","Tren Superior B",   spec_sup2, nivel, peso, usados_b)
-            dia4, usados_b = _construir_dia("Jueves",   "Tren Inferior B",   spec_inf2, nivel, peso, usados_b)
-            dia5, _        = _construir_dia("Viernes",  "Full Body",         spec_fb,   nivel, peso, set())
+            spec_sup2 = [("pecho",2),("espalda",2),("deltoides_medio",1),*spec_brazo_simple(1,1)]
+            spec_inf2 = spec_pierna_con_foco(2,2,2,1)
+            spec_fb   = [("pecho",1),("espalda",1),("deltoides_medio",1),("gluteos",1),
+                         ("cuadriceps",1),("femoral",1),("abs",1),("biceps",1),("triceps",1)]
+            dia1, usados   = _construir_dia("Lunes",    "Tren Superior A",spec_sup1,nivel,peso,usados)
+            dia2, usados   = _construir_dia("Martes",   "Tren Inferior A",spec_inf1,nivel,peso,usados)
+            dia3, usados_b = _construir_dia("Miércoles","Tren Superior B",spec_sup2,nivel,peso,usados_b)
+            dia4, usados_b = _construir_dia("Jueves",   "Tren Inferior B",spec_inf2,nivel,peso,usados_b)
+            dia5, _        = _construir_dia("Viernes",  "Full Body",      spec_fb,  nivel,peso,set())
             dias_rutina = [dia1, dia2, dia3, dia4, dia5]
-
         else:
-            # Chico masa: Emp1 / Tir1 / Pierna / Emp2 / Tir2 (diferente al 1 y 2)
             estructura = "5dias_chico_masa"
-
-            spec_emp1 = [("pecho", 3), ("deltoides_medio", 2), *spec_brazo(2, 0)]
-            spec_tir1 = [("espalda", 3), ("deltoides_posterior", 2), *spec_brazo(0, 2)]
-            spec_pie  = spec_pierna_con_foco(2, 2, 1, 1)
+            spec_emp1 = _spec_empuje(prioritarios)
+            spec_tir1 = _spec_tiron(prioritarios)
+            spec_pie  = spec_pierna_con_foco(2,2,1,1)
             usados_b  = set()
-            spec_emp2 = [("pecho", 3), ("deltoides_medio", 2), *spec_brazo(2, 0)]
-            spec_tir2 = [("espalda", 3), ("deltoides_posterior", 2), *spec_brazo(0, 2)]
-
-            dia1, usados   = _construir_dia("Lunes",    "Empuje 1 (Pecho, Hombro, Tríceps)", spec_emp1, nivel, peso, usados)
-            dia2, usados   = _construir_dia("Martes",   "Tirón 1 (Espalda, Bíceps)",          spec_tir1, nivel, peso, usados)
-            dia3, usados   = _construir_dia("Miércoles","Pierna",                              spec_pie,  nivel, peso, usados)
-            dia4, usados_b = _construir_dia("Jueves",   "Empuje 2 (Pecho, Hombro, Tríceps)", spec_emp2, nivel, peso, usados_b)
-            dia5, usados_b = _construir_dia("Viernes",  "Tirón 2 (Espalda, Bíceps)",          spec_tir2, nivel, peso, usados_b)
+            spec_emp2 = _spec_empuje(prioritarios)
+            spec_tir2 = _spec_tiron(prioritarios)
+            dia1, usados   = _construir_dia("Lunes",    "Empuje 1 (Pecho, Hombro, Tríceps)",spec_emp1,nivel,peso,usados)
+            dia2, usados   = _construir_dia("Martes",   "Tirón 1 (Espalda, Bíceps)",         spec_tir1,nivel,peso,usados)
+            dia3, usados   = _construir_dia("Miércoles","Pierna",                             spec_pie, nivel,peso,usados)
+            dia4, usados_b = _construir_dia("Jueves",   "Empuje 2 (Pecho, Hombro, Tríceps)",spec_emp2,nivel,peso,usados_b)
+            dia5, usados_b = _construir_dia("Viernes",  "Tirón 2 (Espalda, Bíceps)",         spec_tir2,nivel,peso,usados_b)
             dias_rutina = [dia1, dia2, dia3, dia4, dia5]
 
-    # ══════════════════════════════════════════════════
-    # 6 DÍAS
-    # ══════════════════════════════════════════════════
-    else:  # dias == 6
+    # ── 6 DÍAS ──
+    else:
         if es_mujer and "músculo" in objetivo:
-            # Chica masa 6 días
             estructura = "6dias_chica_masa"
-
-            spec_d1 = spec_pierna_con_foco(3, 2, 0, 1)
-            spec_d2 = [("espalda", 2), ("pecho", 1), ("deltoides_posterior", 2), *spec_brazo(1, 0)]
-            spec_d3 = [("gluteos", 3), ("femoral", 2), ("abs", 1)]
-            spec_d4 = [("hombros", 1), ("deltoides_medio", 2), ("deltoides_posterior", 1), *spec_brazo(1, 1)]
-            spec_d5 = [("cuadriceps", 2), ("femoral", 2), ("gluteos", 1), ("abs", 1)]
-            spec_d6 = [("pecho", 2), ("espalda", 2), ("deltoides_medio", 1), *spec_brazo(1, 1)]
-
+            spec_d1 = spec_pierna_con_foco(3,2,0,1)
+            spec_d2 = [("espalda",2),("pecho",1),("deltoides_posterior",2),*spec_brazo_simple(1,0)]
+            spec_d3 = [("gluteos",3),("femoral",2),("abs",1)]
+            spec_d4 = [("hombros",1),("deltoides_medio",2),("deltoides_posterior",1),*spec_brazo_simple(1,1)]
+            spec_d5 = [("cuadriceps",2),("femoral",2),("gluteos",1),("abs",1)]
+            spec_d6 = [("pecho",2),("espalda",2),("deltoides_medio",1),*spec_brazo_simple(1,1)]
             usados_b = set()
-            dia1, usados   = _construir_dia("Lunes",    "Cuádriceps y Glúteo",    spec_d1, nivel, peso, usados)
-            dia2, usados   = _construir_dia("Martes",   "Superior — Espalda",     spec_d2, nivel, peso, usados)
-            dia3, usados_b = _construir_dia("Miércoles","Femoral y Glúteo",        spec_d3, nivel, peso, usados_b)
-            dia4, usados_b = _construir_dia("Jueves",   "Superior — Hombro",      spec_d4, nivel, peso, usados_b)
-            dia5, usados_b = _construir_dia("Viernes",  "Pierna Completa",        spec_d5, nivel, peso, usados_b)
-            dia6, _        = _construir_dia("Sábado",   "Tren Superior Completo", spec_d6, nivel, peso, set())
+            dia1, usados   = _construir_dia("Lunes",    "Cuádriceps y Glúteo",    spec_d1,nivel,peso,usados)
+            dia2, usados   = _construir_dia("Martes",   "Superior — Espalda",     spec_d2,nivel,peso,usados)
+            dia3, usados_b = _construir_dia("Miércoles","Femoral y Glúteo",        spec_d3,nivel,peso,usados_b)
+            dia4, usados_b = _construir_dia("Jueves",   "Superior — Hombro",      spec_d4,nivel,peso,usados_b)
+            dia5, usados_b = _construir_dia("Viernes",  "Pierna Completa",        spec_d5,nivel,peso,usados_b)
+            dia6, _        = _construir_dia("Sábado",   "Tren Superior Completo", spec_d6,nivel,peso,set())
             dias_rutina = [dia1, dia2, dia3, dia4, dia5, dia6]
-
         elif "grasa" in objetivo:
-            # 6 días grasa: sup+inf+fb x2
             estructura = "6dias_grasa"
-
-            spec_sup1 = [("pecho", 2), ("espalda", 2), ("deltoides_medio", 1), *spec_brazo(1, 1)]
-            spec_inf1 = spec_pierna_con_foco(2, 2, 2, 1)
+            spec_sup1 = [("pecho",2),("espalda",2),("deltoides_medio",1),*spec_brazo_simple(1,1)]
+            spec_inf1 = spec_pierna_con_foco(2,2,2,1)
             spec_fb1  = [("pecho",1),("espalda",1),("deltoides_medio",1),("gluteos",1),
                          ("cuadriceps",1),("femoral",1),("abs",1),("biceps",1),("triceps",1)]
             usados_b  = set()
-            spec_sup2 = [("pecho", 2), ("espalda", 2), ("deltoides_medio", 1), *spec_brazo(1, 1)]
-            spec_inf2 = spec_pierna_con_foco(2, 2, 2, 1)
+            spec_sup2 = [("pecho",2),("espalda",2),("deltoides_medio",1),*spec_brazo_simple(1,1)]
+            spec_inf2 = spec_pierna_con_foco(2,2,2,1)
             spec_fb2  = [("pecho",1),("espalda",1),("deltoides_medio",1),("gluteos",1),
                          ("cuadriceps",1),("femoral",1),("abs",1),("biceps",1),("triceps",1)]
-
-            dia1, usados   = _construir_dia("Lunes",    "Tren Superior A",  spec_sup1, nivel, peso, usados)
-            dia2, usados   = _construir_dia("Martes",   "Tren Inferior A",  spec_inf1, nivel, peso, usados)
-            dia3, _        = _construir_dia("Miércoles","Full Body A",       spec_fb1,  nivel, peso, set())
-            dia4, usados_b = _construir_dia("Jueves",   "Tren Superior B",  spec_sup2, nivel, peso, usados_b)
-            dia5, usados_b = _construir_dia("Viernes",  "Tren Inferior B",  spec_inf2, nivel, peso, usados_b)
-            dia6, _        = _construir_dia("Sábado",   "Full Body B",      spec_fb2,  nivel, peso, set())
+            dia1, usados   = _construir_dia("Lunes",    "Tren Superior A",spec_sup1,nivel,peso,usados)
+            dia2, usados   = _construir_dia("Martes",   "Tren Inferior A",spec_inf1,nivel,peso,usados)
+            dia3, _        = _construir_dia("Miércoles","Full Body A",     spec_fb1, nivel,peso,set())
+            dia4, usados_b = _construir_dia("Jueves",   "Tren Superior B",spec_sup2,nivel,peso,usados_b)
+            dia5, usados_b = _construir_dia("Viernes",  "Tren Inferior B",spec_inf2,nivel,peso,usados_b)
+            dia6, _        = _construir_dia("Sábado",   "Full Body B",    spec_fb2, nivel,peso,set())
             dias_rutina = [dia1, dia2, dia3, dia4, dia5, dia6]
-
         else:
-            # Chico masa 6 días: Emp1/Tir1/Pier1/Emp2/Tir2/Pier2
             estructura = "6dias_chico_masa"
-
-            spec_emp1 = [("pecho", 3), ("deltoides_medio", 2), *spec_brazo(2, 0)]
-            spec_tir1 = [("espalda", 3), ("deltoides_posterior", 2), *spec_brazo(0, 2)]
-            spec_pie1 = spec_pierna_con_foco(2, 2, 1, 1)
+            spec_emp1 = _spec_empuje(prioritarios)
+            spec_tir1 = _spec_tiron(prioritarios)
+            spec_pie1 = spec_pierna_con_foco(2,2,1,1)
             usados_b  = set()
-            spec_emp2 = [("pecho", 3), ("deltoides_medio", 2), *spec_brazo(2, 0)]
-            spec_tir2 = [("espalda", 3), ("deltoides_posterior", 2), *spec_brazo(0, 2)]
-            spec_pie2 = [("cuadriceps", 2), ("femoral", 2), ("gluteos", 1), ("abs", 1)]
-
-            dia1, usados   = _construir_dia("Lunes",    "Empuje 1",  spec_emp1, nivel, peso, usados)
-            dia2, usados   = _construir_dia("Martes",   "Tirón 1",   spec_tir1, nivel, peso, usados)
-            dia3, usados   = _construir_dia("Miércoles","Pierna 1",  spec_pie1, nivel, peso, usados)
-            dia4, usados_b = _construir_dia("Jueves",   "Empuje 2",  spec_emp2, nivel, peso, usados_b)
-            dia5, usados_b = _construir_dia("Viernes",  "Tirón 2",   spec_tir2, nivel, peso, usados_b)
-            dia6, usados_b = _construir_dia("Sábado",   "Pierna 2",  spec_pie2, nivel, peso, usados_b)
+            spec_emp2 = _spec_empuje(prioritarios)
+            spec_tir2 = _spec_tiron(prioritarios)
+            spec_pie2 = [("cuadriceps",2),("femoral",2),("gluteos",1),("abs",1)]
+            dia1, usados   = _construir_dia("Lunes",    "Empuje 1",spec_emp1,nivel,peso,usados)
+            dia2, usados   = _construir_dia("Martes",   "Tirón 1", spec_tir1,nivel,peso,usados)
+            dia3, usados   = _construir_dia("Miércoles","Pierna 1",spec_pie1,nivel,peso,usados)
+            dia4, usados_b = _construir_dia("Jueves",   "Empuje 2",spec_emp2,nivel,peso,usados_b)
+            dia5, usados_b = _construir_dia("Viernes",  "Tirón 2", spec_tir2,nivel,peso,usados_b)
+            dia6, usados_b = _construir_dia("Sábado",   "Pierna 2",spec_pie2,nivel,peso,usados_b)
             dias_rutina = [dia1, dia2, dia3, dia4, dia5, dia6]
 
-    # Añadir parámetros a todos los ejercicios
     _aplicar_parametros(dias_rutina, series, reps_min, reps_max, nivel)
 
     return {
