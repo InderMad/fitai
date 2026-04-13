@@ -24,6 +24,7 @@ from database import (
     guardar_niveles_sesion, obtener_ultimo_nivel,
     get_supabase_client
 )
+import json
 
 # =====================================================
 # CONFIGURACIÓN
@@ -132,10 +133,6 @@ def mostrar_nivel_fuerza(resultado_nivel):
 # FUNCIÓN: OBTENER EJERCICIOS SIMILARES
 # =====================================================
 def obtener_ejercicios_similares(grupo, nombre_actual, nivel):
-    """
-    Devuelve una lista de ejercicios del mismo grupo muscular
-    que no sea el ejercicio actual, filtrados por nivel.
-    """
     disponibles = [
         e["nombre"] for e in EJERCICIOS.get(grupo, [])
         if e["nombre"] != nombre_actual and e["nivel_min"] <= nivel
@@ -144,9 +141,6 @@ def obtener_ejercicios_similares(grupo, nombre_actual, nivel):
 
 
 def calcular_peso_para_ejercicio(grupo, nombre_ejercicio, peso_usuario):
-    """
-    Calcula el peso inicial para un ejercicio específico.
-    """
     from generador_rutinas import calcular_peso_inicial
     ejercicio = next(
         (e for e in EJERCICIOS.get(grupo, []) if e["nombre"] == nombre_ejercicio),
@@ -172,7 +166,8 @@ for key, default in {
     "auth_pantalla":     "login",
     "feedback_ia":       None,
     "subidas_nivel":     [],
-    "favoritos":         []
+    "favoritos":         [],
+    "cambios_ejercicios": {}
 }.items():
     if key not in st.session_state:
         st.session_state[key] = default
@@ -310,8 +305,7 @@ elif st.session_state.auth_user_id and not st.session_state.perfil:
     ])
     nivel_num = 1 if "Principiante" in nivel_texto else (2 if "Intermedio" in nivel_texto else 3)
     if nivel_num == 3:
-        st.success("💡 Como usuario avanzado, tu rutina incluirá técnicas avanzadas "
-                   "como Drop Sets y Rest-Pause.")
+        st.success("💡 Como usuario avanzado, tu rutina incluirá técnicas avanzadas.")
     st.divider()
 
     st.header("4️⃣ Tu objetivo")
@@ -324,18 +318,18 @@ elif st.session_state.auth_user_id and not st.session_state.perfil:
     st.divider()
 
     st.header("5️⃣ ¿En qué músculos quieres enfocarte más?")
-    st.caption("Recibirán más ejercicios en tu rutina. Puedes elegir varios o ninguno.")
+    st.caption("Recibirán más ejercicios en tu rutina.")
     opciones_musculos = {
-        "🍑 Glúteos":           "gluteos",
-        "🦵 Piernas":           "piernas",
-        "🫁 Pecho":             "pecho",
-        "🔙 Espalda":           "espalda",
-        "🥥 Hombros":           "hombros",
-        "💪 Bíceps":            "biceps",
-        "🔱 Tríceps":           "triceps",
-        "🎯 Deltoides medio":   "deltoides_medio",
-        "🦵 Cuádriceps":        "cuadriceps",
-        "🔻 Femoral":           "femoral",
+        "🍑 Glúteos":         "gluteos",
+        "🦵 Piernas":         "piernas",
+        "🫁 Pecho":           "pecho",
+        "🔙 Espalda":         "espalda",
+        "🥥 Hombros":         "hombros",
+        "💪 Bíceps":          "biceps",
+        "🔱 Tríceps":         "triceps",
+        "🎯 Deltoides medio": "deltoides_medio",
+        "🦵 Cuádriceps":      "cuadriceps",
+        "🔻 Femoral":         "femoral",
     }
     musculos_seleccionados = st.multiselect(
         "Selecciona tus músculos prioritarios (opcional):",
@@ -347,7 +341,6 @@ elif st.session_state.auth_user_id and not st.session_state.perfil:
 
     st.header("6️⃣ Disponibilidad")
     dias = st.select_slider("Días/semana", options=[1,2,3,4,5,6], value=3)
-
     objetivo_lower = objetivo.lower()
     if dias == 1:
         st.info("💡 Haremos un Full Body completo.")
@@ -362,19 +355,19 @@ elif st.session_state.auth_user_id and not st.session_state.perfil:
         if genero == "Mujer" and "músculo" in objetivo_lower:
             st.info("💡 Haremos Cuád+Glút / Superior Espalda / Femoral+Glút / Superior Hombro.")
         elif "grasa" in objetivo_lower:
-            st.info("💡 Haremos 2 días de Tren Superior + 2 días de Tren Inferior.")
+            st.info("💡 Haremos 2 días Superior + 2 días Inferior.")
         else:
             st.info("💡 Haremos Empuje / Tirón / Pierna / Hombro y Brazo.")
     elif dias == 5:
         if genero == "Mujer" and "músculo" in objetivo_lower:
-            st.info("💡 Haremos rutina especializada en tren inferior + tren superior.")
+            st.info("💡 Rutina especializada tren inferior + superior.")
         elif "grasa" in objetivo_lower:
             st.info("💡 Haremos 2 Superior + 2 Inferior + 1 Full Body.")
         else:
-            st.info("💡 Haremos Empuje 1 / Tirón 1 / Pierna / Empuje 2 / Tirón 2.")
+            st.info("💡 Haremos Empuje × 2 / Tirón × 2 / Pierna.")
     else:
         if genero == "Mujer" and "músculo" in objetivo_lower:
-            st.info("💡 Haremos rutina completa de 6 días especializada.")
+            st.info("💡 Rutina completa 6 días especializada.")
         elif "grasa" in objetivo_lower:
             st.info("💡 Haremos Superior + Inferior + Full Body × 2.")
         else:
@@ -405,18 +398,11 @@ elif st.session_state.auth_user_id and not st.session_state.perfil:
                   use_container_width=True,
                   type="primary"):
         perfil = {
-            "nombre":                nombre,
-            "edad":                  edad,
-            "peso":                  peso,
-            "genero":                genero,
-            "nivel_texto":           nivel_texto,
-            "nivel_num":             nivel_num,
-            "objetivo":              objetivo,
-            "musculos_prioritarios": musculos_prioritarios,
-            "dias":                  dias,
-            "minutos":               minutos,
-            "equipamiento":          equipamiento,
-            "lesiones":              lesiones_texto
+            "nombre": nombre, "edad": edad, "peso": peso,
+            "genero": genero, "nivel_texto": nivel_texto, "nivel_num": nivel_num,
+            "objetivo": objetivo, "musculos_prioritarios": musculos_prioritarios,
+            "dias": dias, "minutos": minutos,
+            "equipamiento": equipamiento, "lesiones": lesiones_texto
         }
         with st.spinner("Generando tu rutina personalizada..."):
             usuario_id = guardar_perfil(st.session_state.auth_user_id, perfil)
@@ -467,7 +453,6 @@ else:
                     del st.session_state[key]
                 st.rerun()
 
-        # Notificaciones de subida de nivel
         for subida in st.session_state.get("subidas_nivel", []):
             st.success(
                 f"⬆️ ¡Subiste de nivel en **{subida['ejercicio']}**! "
@@ -529,18 +514,22 @@ else:
 
         st.divider()
 
-        col_nav1, col_nav2, col_nav3 = st.columns(3)
+        col_nav1, col_nav2, col_nav3, col_nav4 = st.columns(4)
         with col_nav1:
-            if st.button("📈 Mi progreso", use_container_width=True):
+            if st.button("📈 Progreso", use_container_width=True):
                 st.session_state.pantalla = "progreso"
                 st.rerun()
         with col_nav2:
-            if st.button("📊 Bloque actual", use_container_width=True):
+            if st.button("📊 Bloque", use_container_width=True):
                 st.session_state.pantalla = "resumen_bloque"
                 st.rerun()
         with col_nav3:
-            if st.button("🏆 Ranking global", use_container_width=True):
+            if st.button("🏆 Ranking", use_container_width=True):
                 st.session_state.pantalla = "ranking"
+                st.rerun()
+        with col_nav4:
+            if st.button("✏️ Perfil", use_container_width=True):
+                st.session_state.pantalla = "editar_perfil"
                 st.rerun()
 
         st.divider()
@@ -566,16 +555,11 @@ else:
                         st.write(f"{emoji} **{resultado['ejercicio']}** → {resultado['nuevo_peso']} kg")
 
         st.divider()
-
-        # ── Rutina completa con opción de cambiar ejercicios ──
         st.subheader("📅 Tu rutina completa")
         nivel_usuario = perfil.get("nivel_num", 1)
 
-        # Inicializar dict de cambios pendientes en session_state
         if "cambios_ejercicios" not in st.session_state:
             st.session_state.cambios_ejercicios = {}
-
-        rutina_modificada = False
 
         for idx_dia, dia in enumerate(rutina_hoy["dias"]):
             with st.expander(f"📅 {dia['dia']} — {dia['enfoque']}"):
@@ -583,42 +567,32 @@ else:
                     peso_texto = f"{ejercicio['peso_sugerido']} kg" if ejercicio["peso_sugerido"] else "Peso corporal"
                     grupo      = ejercicio["grupo"]
                     nombre_ej  = ejercicio["nombre"]
-
-                    # Clave única para este ejercicio en session_state
-                    cambio_key    = f"cambio_{idx_dia}_{idx_ej}"
-                    selector_key  = f"selector_{idx_dia}_{idx_ej}"
+                    cambio_key   = f"cambio_{idx_dia}_{idx_ej}"
+                    selector_key = f"selector_{idx_dia}_{idx_ej}"
 
                     with st.container(border=True):
                         col_num, col_info, col_peso, col_btn = st.columns([0.4, 2.5, 1.5, 1.2])
-
                         with col_num:
                             st.markdown(f"### {idx_ej + 1}")
-
                         with col_info:
                             st.markdown(f"**{nombre_ej}**")
                             st.caption(f"Grupo: {grupo.replace('_', ' ').capitalize()}")
                             if ejercicio.get("tecnica"):
                                 st.caption(f"⚡ {ejercicio['tecnica']['nombre']}: {ejercicio['tecnica']['descripcion']}")
-
                         with col_peso:
                             st.markdown(f"**{ejercicio['series']} × {ejercicio['reps_min']}–{ejercicio['reps_max']} reps**")
                             st.markdown(f"📦 {peso_texto}")
-
                         with col_btn:
-                            # Botón para abrir/cerrar el selector de cambio
-                            abierto = st.session_state.cambios_ejercicios.get(cambio_key, False)
+                            abierto      = st.session_state.cambios_ejercicios.get(cambio_key, False)
                             etiqueta_btn = "✕ Cerrar" if abierto else "🔄 Cambiar"
-                            if st.button(etiqueta_btn, key=f"btn_{cambio_key}",
-                                          use_container_width=True):
+                            if st.button(etiqueta_btn, key=f"btn_{cambio_key}", use_container_width=True):
                                 st.session_state.cambios_ejercicios[cambio_key] = not abierto
                                 st.rerun()
 
-                    # Selector desplegable — aparece solo si el botón está activo
                     if st.session_state.cambios_ejercicios.get(cambio_key, False):
                         similares = obtener_ejercicios_similares(grupo, nombre_ej, nivel_usuario)
-
                         if not similares:
-                            st.warning("No hay más ejercicios disponibles para este grupo muscular y tu nivel.")
+                            st.warning("No hay más ejercicios disponibles para este grupo y nivel.")
                         else:
                             with st.container(border=True):
                                 st.caption(f"🔄 Elige un ejercicio alternativo de **{grupo.replace('_', ' ').capitalize()}**:")
@@ -628,62 +602,302 @@ else:
                                     key=selector_key,
                                     label_visibility="collapsed"
                                 )
-
                                 col_conf, col_cancel = st.columns(2)
                                 with col_conf:
-                                    if st.button("✅ Confirmar cambio",
-                                                  key=f"confirm_{cambio_key}",
-                                                  use_container_width=True,
-                                                  type="primary"):
-                                        # Aplicar el cambio en la rutina
-                                        nuevo_peso = calcular_peso_para_ejercicio(
-                                            grupo, ejercicio_nuevo, perfil["peso"]
-                                        )
-
-                                        # Modificar en la rutina guardada en session_state
+                                    if st.button("✅ Confirmar", key=f"confirm_{cambio_key}",
+                                                  use_container_width=True, type="primary"):
+                                        nuevo_peso        = calcular_peso_para_ejercicio(grupo, ejercicio_nuevo, perfil["peso"])
                                         rutina_actualizada = st.session_state.rutina
-                                        rutina_actualizada["dias"][idx_dia]["ejercicios"][idx_ej]["nombre"]         = ejercicio_nuevo
-                                        rutina_actualizada["dias"][idx_dia]["ejercicios"][idx_ej]["peso_sugerido"]  = nuevo_peso
-                                        rutina_actualizada["dias"][idx_dia]["ejercicios"][idx_ej]["tecnica"]        = None
+                                        rutina_actualizada["dias"][idx_dia]["ejercicios"][idx_ej]["nombre"]        = ejercicio_nuevo
+                                        rutina_actualizada["dias"][idx_dia]["ejercicios"][idx_ej]["peso_sugerido"] = nuevo_peso
+                                        rutina_actualizada["dias"][idx_dia]["ejercicios"][idx_ej]["tecnica"]       = None
                                         st.session_state.rutina = rutina_actualizada
-
-                                        # Guardar en Supabase
-                                        actualizar_pesos_rutina(
-                                            st.session_state.usuario_id,
-                                            [{
-                                                "ejercicio":  ejercicio_nuevo,
-                                                "nuevo_peso": nuevo_peso or 0
-                                            }]
-                                        )
-
-                                        # Guardar rutina completa actualizada
-                                        from database import get_supabase_client
-                                        import json
                                         supa = get_supabase_client()
-                                        resp = (
-                                            supa.table("rutinas")
-                                            .select("id")
-                                            .eq("usuario_id", st.session_state.usuario_id)
-                                            .order("created_at", desc=True)
-                                            .limit(1)
-                                            .execute()
-                                        )
+                                        resp = (supa.table("rutinas").select("id")
+                                                .eq("usuario_id", st.session_state.usuario_id)
+                                                .order("created_at", desc=True).limit(1).execute())
                                         if resp.data:
                                             supa.table("rutinas").update({
                                                 "rutina_json": json.dumps(rutina_actualizada, ensure_ascii=False)
                                             }).eq("id", resp.data[0]["id"]).execute()
-
-                                        # Cerrar el selector
                                         st.session_state.cambios_ejercicios[cambio_key] = False
-                                        st.success(f"✅ Ejercicio cambiado a **{ejercicio_nuevo}**")
+                                        st.success(f"✅ Cambiado a **{ejercicio_nuevo}**")
                                         st.rerun()
-
                                 with col_cancel:
-                                    if st.button("✕ Cancelar",
-                                                  key=f"cancel_{cambio_key}",
-                                                  use_container_width=True):
+                                    if st.button("✕ Cancelar", key=f"cancel_{cambio_key}", use_container_width=True):
                                         st.session_state.cambios_ejercicios[cambio_key] = False
                                         st.rerun()
+
+    # --------------------------------------------------
+    # PANTALLA: EDITAR PERFIL ← NUEVA
+    # --------------------------------------------------
+    elif st.session_state.pantalla == "editar_perfil":
+
+        st.title("✏️ Editar perfil")
+        st.write("Actualiza tus datos. El historial de entrenamientos se conserva siempre.")
+
+        if st.button("← Volver a la rutina"):
+            st.session_state.pantalla = "rutina"
+            st.rerun()
+
+        st.divider()
+
+        perfil_actual = st.session_state.perfil
+
+        # ── 1. Datos personales ──
+        st.header("1️⃣ Datos personales")
+        nombre_ed = st.text_input("Nombre", value=perfil_actual.get("nombre", ""))
+        col1, col2 = st.columns(2)
+        with col1:
+            edad_ed = st.number_input("Edad", min_value=16, max_value=70,
+                                       value=int(perfil_actual.get("edad", 25)))
+        with col2:
+            peso_ed = st.number_input("Peso (kg)", min_value=40.0, max_value=200.0,
+                                       value=float(perfil_actual.get("peso", 70.0)), step=0.5)
+        st.divider()
+
+        # ── 2. Género con advertencia ──
+        st.header("2️⃣ Género")
+        opciones_genero = ["Hombre", "Mujer", "Prefiero no decirlo"]
+        genero_actual   = perfil_actual.get("genero", "Prefiero no decirlo")
+        idx_genero      = opciones_genero.index(genero_actual) if genero_actual in opciones_genero else 0
+        genero_ed = st.radio(
+            "Género:",
+            options=opciones_genero,
+            index=idx_genero,
+            label_visibility="collapsed",
+            horizontal=True
+        )
+        if genero_ed != genero_actual:
+            st.warning("⚠️ Cambiar el género modifica drásticamente la estructura de la rutina "
+                       "(división de días, grupos musculares prioritarios, ejercicios). "
+                       "Se te preguntará si quieres regenerarla al guardar.")
+        st.divider()
+
+        # ── 3. Nivel con advertencia ──
+        st.header("3️⃣ Nivel de experiencia")
+        opciones_nivel = [
+            "Principiante — Menos de 6 meses",
+            "Intermedio — Entre 6 meses y 2 años",
+            "Avanzado — Más de 2 años"
+        ]
+        nivel_actual = perfil_actual.get("nivel_texto", opciones_nivel[0])
+        idx_nivel    = opciones_nivel.index(nivel_actual) if nivel_actual in opciones_nivel else 0
+        nivel_ed = st.selectbox("Nivel:", options=opciones_nivel, index=idx_nivel)
+        nivel_num_ed = 1 if "Principiante" in nivel_ed else (2 if "Intermedio" in nivel_ed else 3)
+
+        if nivel_ed != nivel_actual:
+            st.warning("⚠️ Cambiar el nivel modifica los ejercicios disponibles y puede "
+                       "añadir o quitar técnicas avanzadas (Drop Sets, Rest-Pause). "
+                       "Se te preguntará si quieres regenerar la rutina al guardar.")
+        st.divider()
+
+        # ── 4. Objetivo ──
+        st.header("4️⃣ Objetivo")
+        opciones_objetivo = [
+            "💪 Ganar músculo (hipertrofia)",
+            "🔥 Perder grasa (mantener músculo)",
+            "🏋️ Ganar fuerza máxima",
+            "🏃 Mejorar condición física general"
+        ]
+        objetivo_actual = perfil_actual.get("objetivo", opciones_objetivo[0])
+        idx_objetivo    = opciones_objetivo.index(objetivo_actual) if objetivo_actual in opciones_objetivo else 0
+        objetivo_ed = st.radio("Objetivo:", options=opciones_objetivo,
+                                index=idx_objetivo, label_visibility="collapsed")
+        st.divider()
+
+        # ── 5. Músculos prioritarios ──
+        st.header("5️⃣ Músculos prioritarios")
+        opciones_musculos = {
+            "🍑 Glúteos":         "gluteos",
+            "🦵 Piernas":         "piernas",
+            "🫁 Pecho":           "pecho",
+            "🔙 Espalda":         "espalda",
+            "🥥 Hombros":         "hombros",
+            "💪 Bíceps":          "biceps",
+            "🔱 Tríceps":         "triceps",
+            "🎯 Deltoides medio": "deltoides_medio",
+            "🦵 Cuádriceps":      "cuadriceps",
+            "🔻 Femoral":         "femoral",
+        }
+        musculos_inverso    = {v: k for k, v in opciones_musculos.items()}
+        prioritarios_actual = perfil_actual.get("musculos_prioritarios", [])
+        if isinstance(prioritarios_actual, str):
+            try:
+                prioritarios_actual = json.loads(prioritarios_actual)
+            except Exception:
+                prioritarios_actual = []
+
+        default_musculos = [musculos_inverso[m] for m in prioritarios_actual if m in musculos_inverso]
+        musculos_ed      = st.multiselect(
+            "Músculos prioritarios:",
+            options=list(opciones_musculos.keys()),
+            default=default_musculos
+        )
+        musculos_prioritarios_ed = [opciones_musculos[m] for m in musculos_ed]
+        st.divider()
+
+        # ── 6. Días y tiempo ──
+        st.header("6️⃣ Disponibilidad")
+        dias_actual = int(perfil_actual.get("dias", 3))
+        dias_ed     = st.select_slider("Días/semana", options=[1,2,3,4,5,6], value=dias_actual)
+        minutos_ed  = st.selectbox(
+            "Tiempo por sesión",
+            options=[30,45,60,90],
+            index=[30,45,60,90].index(int(perfil_actual.get("minutos", 60))),
+            format_func=lambda x: f"{x} minutos"
+        )
+        st.divider()
+
+        # ── 7. Equipamiento ──
+        st.header("7️⃣ Equipamiento")
+        opciones_equip  = [
+            "🏠 Sin equipamiento (solo peso corporal)",
+            "🏠 Tengo mancuernas en casa",
+            "🏢 Tengo acceso a un gimnasio completo"
+        ]
+        equip_actual = perfil_actual.get("equipamiento", opciones_equip[2])
+        idx_equip    = opciones_equip.index(equip_actual) if equip_actual in opciones_equip else 2
+        equipamiento_ed = st.radio("Equipamiento:", options=opciones_equip,
+                                    index=idx_equip, label_visibility="collapsed")
+        st.divider()
+
+        # ── 8. Lesiones ──
+        st.header("8️⃣ Lesiones")
+        lesiones_actual = perfil_actual.get("lesiones", "")
+        tiene_lesiones_ed = st.toggle("¿Tienes alguna lesión actualmente?",
+                                       value=bool(lesiones_actual))
+        lesiones_ed = ""
+        if tiene_lesiones_ed:
+            lesiones_ed = st.text_area("Descríbela:", value=lesiones_actual,
+                                        placeholder="Ejemplo: molestias en rodilla derecha")
+        st.divider()
+
+        # ── Detectar qué cambió ──
+        cambio_critico   = (genero_ed != genero_actual or nivel_ed != nivel_actual)
+        cambio_estructura = (
+            dias_ed     != int(perfil_actual.get("dias", 3)) or
+            objetivo_ed != objetivo_actual or
+            equipamiento_ed != equip_actual
+        )
+        cambio_menor = (
+            peso_ed  != float(perfil_actual.get("peso", 70.0)) or
+            edad_ed  != int(perfil_actual.get("edad", 25))     or
+            nombre_ed != perfil_actual.get("nombre", "")       or
+            musculos_prioritarios_ed != prioritarios_actual    or
+            minutos_ed != int(perfil_actual.get("minutos", 60)) or
+            lesiones_ed != lesiones_actual
+        )
+
+        # ── Botón guardar ──
+        if st.button("💾 Guardar cambios", use_container_width=True, type="primary",
+                      disabled=not nombre_ed):
+
+            perfil_nuevo = {
+                "nombre":                nombre_ed,
+                "edad":                  edad_ed,
+                "peso":                  peso_ed,
+                "genero":                genero_ed,
+                "nivel_texto":           nivel_ed,
+                "nivel_num":             nivel_num_ed,
+                "objetivo":              objetivo_ed,
+                "musculos_prioritarios": musculos_prioritarios_ed,
+                "dias":                  dias_ed,
+                "minutos":               minutos_ed,
+                "equipamiento":          equipamiento_ed,
+                "lesiones":              lesiones_ed
+            }
+
+            # Guardar nuevo perfil en Supabase
+            with st.spinner("Guardando cambios..."):
+                nuevo_usuario_id = guardar_perfil(
+                    st.session_state.auth_user_id, perfil_nuevo
+                )
+
+            st.session_state.perfil     = perfil_nuevo
+            st.session_state.usuario_id = nuevo_usuario_id
+
+            # Si hay cambios que afectan la rutina, preguntar qué hacer
+            if cambio_critico or cambio_estructura:
+                st.session_state.perfil_pendiente_rutina = perfil_nuevo
+                st.session_state.pantalla = "confirmar_rutina"
+                st.rerun()
+            else:
+                # Solo cambios menores (peso, nombre, lesiones...)
+                # Actualizar los pesos basados en el nuevo peso corporal si cambió
+                if peso_ed != float(perfil_actual.get("peso", 70.0)):
+                    st.session_state.rutina = obtener_rutina(nuevo_usuario_id) or st.session_state.rutina
+                st.success("✅ Perfil actualizado correctamente. El historial se ha conservado.")
+                st.session_state.pantalla = "rutina"
+                st.rerun()
+
+    # --------------------------------------------------
+    # PANTALLA: CONFIRMAR CAMBIO DE RUTINA ← NUEVA
+    # --------------------------------------------------
+    elif st.session_state.pantalla == "confirmar_rutina":
+
+        perfil_nuevo = st.session_state.get("perfil_pendiente_rutina", perfil)
+
+        st.title("⚠️ Cambios importantes detectados")
+        st.write("Has modificado campos que afectan significativamente tu rutina.")
+
+        # Mostrar resumen de cambios
+        with st.container(border=True):
+            st.subheader("📋 Resumen de cambios")
+            if perfil_nuevo.get("genero") != perfil.get("genero"):
+                st.write(f"• **Género:** {perfil.get('genero')} → {perfil_nuevo.get('genero')}")
+            if perfil_nuevo.get("nivel_texto") != perfil.get("nivel_texto"):
+                st.write(f"• **Nivel:** {perfil.get('nivel_texto')} → {perfil_nuevo.get('nivel_texto')}")
+            if perfil_nuevo.get("objetivo") != perfil.get("objetivo"):
+                st.write(f"• **Objetivo:** {perfil.get('objetivo')} → {perfil_nuevo.get('objetivo')}")
+            if perfil_nuevo.get("dias") != perfil.get("dias"):
+                st.write(f"• **Días/semana:** {perfil.get('dias')} → {perfil_nuevo.get('dias')}")
+            if perfil_nuevo.get("equipamiento") != perfil.get("equipamiento"):
+                st.write(f"• **Equipamiento:** cambiado")
+
+        st.divider()
+        st.subheader("¿Qué quieres hacer con tu rutina?")
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            with st.container(border=True):
+                st.markdown("### 🔄 Regenerar rutina")
+                st.write("Se creará una rutina completamente nueva con tus nuevos datos. "
+                         "Los ejercicios cambiarán pero tu **historial y progreso se conservan**.")
+                if st.button("Regenerar rutina nueva →",
+                              use_container_width=True, type="primary"):
+                    with st.spinner("Generando tu nueva rutina..."):
+                        nueva_rutina = generar_rutina(perfil_nuevo)
+                        guardar_rutina(st.session_state.usuario_id, nueva_rutina)
+                        nuevo_bloque = crear_bloque_inicial()
+                        guardar_bloque(st.session_state.usuario_id, nuevo_bloque)
+
+                    st.session_state.rutina  = nueva_rutina
+                    st.session_state.bloque  = nuevo_bloque
+                    st.session_state.perfil  = perfil_nuevo
+                    st.session_state.cambios_ejercicios = {}
+                    if "perfil_pendiente_rutina" in st.session_state:
+                        del st.session_state.perfil_pendiente_rutina
+
+                    st.success("✅ Nueva rutina generada. El historial anterior se conserva.")
+                    st.session_state.pantalla = "rutina"
+                    st.rerun()
+
+        with col2:
+            with st.container(border=True):
+                st.markdown("### ➡️ Mantener rutina actual")
+                st.write("Se actualizan tus datos de perfil pero **se mantiene la rutina actual** "
+                         "con los mismos ejercicios. Puedes cambiarla cuando quieras.")
+                if st.button("Mantener rutina actual →",
+                              use_container_width=True):
+                    st.session_state.perfil = perfil_nuevo
+                    if "perfil_pendiente_rutina" in st.session_state:
+                        del st.session_state.perfil_pendiente_rutina
+
+                    st.success("✅ Perfil actualizado. Rutina actual conservada.")
+                    st.session_state.pantalla = "rutina"
+                    st.rerun()
 
     # --------------------------------------------------
     # PANTALLA: SESIÓN ACTIVA
@@ -701,9 +915,9 @@ else:
 
         with st.expander("❓ ¿Qué es el RPE?"):
             st.write("""
-            - 🟢 **1–4:** Esfuerzo bajo — podrías hacer muchas más repeticiones
-            - 🟠 **5–7:** Esfuerzo medio — te quedan 2–4 repeticiones en el tanque
-            - 🔴 **8–10:** Esfuerzo alto — estás cerca del límite
+            - 🟢 **1–4:** Esfuerzo bajo
+            - 🟠 **5–7:** Esfuerzo medio
+            - 🔴 **8–10:** Esfuerzo alto
             """)
 
         st.divider()
@@ -780,11 +994,9 @@ else:
                         nombre_ej = resultado["ejercicio"]
                         if nombre_ej in favoritos:
                             nivel_nuevo = calcular_nivel_fuerza(
-                                nombre_ej,
-                                perfil["peso"],
+                                nombre_ej, perfil["peso"],
                                 perfil.get("genero", "Prefiero no decirlo"),
-                                resultado["peso_usado"],
-                                int(rutina_hoy["reps_max"])
+                                resultado["peso_usado"], int(rutina_hoy["reps_max"])
                             )
                             if nivel_nuevo:
                                 niveles_nuevos.append({
@@ -881,7 +1093,6 @@ else:
             st.rerun()
 
         st.divider()
-
         st.subheader("⭐ Mis ejercicios favoritos")
         st.caption("Selecciona los ejercicios que quieres seguir en el ranking.")
 
@@ -917,23 +1128,17 @@ else:
                     continue
 
                 ultimo_dato = datos_ejercicio[-1]
-                peso_usado  = ultimo_dato["peso_usado"]
-                reps_usadas = rutina["reps_max"]
-
                 nivel_resultado = calcular_nivel_fuerza(
-                    ejercicio_fav,
-                    perfil["peso"],
+                    ejercicio_fav, perfil["peso"],
                     perfil.get("genero", "Prefiero no decirlo"),
-                    peso_usado,
-                    reps_usadas
+                    ultimo_dato["peso_usado"], rutina["reps_max"]
                 )
 
                 if nivel_resultado:
-                    st.caption(f"Basado en tu última sesión: {peso_usado} kg × {reps_usadas} reps")
+                    st.caption(f"Basado en: {ultimo_dato['peso_usado']} kg × {rutina['reps_max']} reps")
                     mostrar_nivel_fuerza(nivel_resultado)
                 else:
                     st.caption("No hay estándares disponibles para este ejercicio.")
-
                 st.divider()
 
     # --------------------------------------------------
